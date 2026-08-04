@@ -9,7 +9,7 @@
     "test": "vitest run",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --port 4173",
+    "preview": "vite preview --port 4173 --strictPort",
     "coverage": "vitest run --coverage",
     "e2e": "playwright test",
     "test:watch": "vitest"

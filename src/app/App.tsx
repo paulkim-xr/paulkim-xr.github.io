@@ -86,6 +86,16 @@ export function App() {
     void getRoom(state.target)?.scene.preload()
   }, [state.phase, state.target])
 
+  // Machine state, mirrored onto the document element. Everything this app
+  // draws lives inside a WebGL canvas, where an end-to-end test can see
+  // nothing at all — without this the only assertions available are the URL
+  // and pixel diffs.
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.phase = state.phase
+    root.dataset.project = rooms[activeIndex].id
+  }, [state.phase, activeIndex])
+
   return (
     <Canvas camera={{ position: [0, 0.15, 3.3], fov: 50 }} data-testid="scene">
       <Stage activeIndex={activeIndex} transition={transition} onStep={step} xrMode={false} />
