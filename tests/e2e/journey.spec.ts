@@ -126,3 +126,38 @@ test.describe('deep links', () => {
     await expect(page.locator('html')).toHaveAttribute('data-phase', 'inRoom', SETTLE)
   })
 })
+
+test.describe('the lab', () => {
+  test('circles and gravity each load a canvas of their own', async ({ page }) => {
+    for (const path of ['/lab/circles', '/lab/gravity']) {
+      const errors = watchForErrors(page)
+      await page.goto(path)
+
+      await expect(page.getByTestId('lab-canvas')).toBeVisible(SETTLE)
+      await expect(page).toHaveURL(path)
+      expect(errors, `${path} logged errors`).toEqual([])
+    }
+  })
+
+  test('gravity keeps simulating rather than freezing on the first frame', async ({ page }) => {
+    await page.goto('/lab/gravity')
+    await expect(page.getByTestId('lab-canvas')).toBeVisible(SETTLE)
+    await page.waitForTimeout(1200)
+
+    const first = await page.screenshot()
+    await page.waitForTimeout(700)
+
+    expect(first.equals(await page.screenshot()), 'the simulation stopped').toBe(false)
+  })
+
+  test('the hub offers a way into the lab and back out again', async ({ page }) => {
+    await openHub(page)
+
+    await page.getByRole('link', { name: 'circles' }).click()
+    await expect(page).toHaveURL('/lab/circles', SETTLE)
+
+    await page.getByRole('link', { name: '← back' }).click()
+    await expect(page).toHaveURL('/', SETTLE)
+    await expect(page.locator('html')).toHaveAttribute('data-phase', 'browsing', SETTLE)
+  })
+})

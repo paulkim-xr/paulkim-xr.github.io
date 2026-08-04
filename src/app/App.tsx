@@ -1,6 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { getRoom, rooms, roomIndex } from '../content/registry'
 import { browsingIn, initialState } from '../transition/machine'
 import { useTransition } from '../transition/useTransition'
@@ -97,8 +97,40 @@ export function App() {
   }, [state.phase, activeIndex])
 
   return (
-    <Canvas camera={{ position: [0, 0.15, 3.3], fov: 50 }} data-testid="scene">
-      <Stage activeIndex={activeIndex} transition={transition} onStep={step} xrMode={false} />
-    </Canvas>
+    <>
+      <LabNav />
+      <Canvas camera={{ position: [0, 0.15, 3.3], fov: 50 }} data-testid="scene">
+        <Stage activeIndex={activeIndex} transition={transition} onStep={step} xrMode={false} />
+      </Canvas>
+    </>
+  )
+}
+
+const LAB_NAV_STYLE: React.CSSProperties = {
+  position: 'fixed',
+  right: '1.5rem',
+  bottom: '1.4rem',
+  display: 'flex',
+  gap: '1rem',
+  font: '400 0.8rem/1 system-ui, sans-serif',
+  zIndex: 1,
+}
+
+/**
+ * Way through to the lab pieces.
+ *
+ * Plain DOM rather than drei Text in the scene: these are links off the hub
+ * entirely, and the hub's own canvas is busy being one morphing object.
+ */
+function LabNav() {
+  return (
+    <nav style={LAB_NAV_STYLE}>
+      <Link to="/lab/circles" style={{ color: '#6f7787', textDecoration: 'none' }}>
+        circles
+      </Link>
+      <Link to="/lab/gravity" style={{ color: '#6f7787', textDecoration: 'none' }}>
+        gravity
+      </Link>
+    </nav>
   )
 }

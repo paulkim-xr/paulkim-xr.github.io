@@ -30,6 +30,8 @@ export default defineConfig({
         'src/hub/budget.ts',
         'src/hub/fade.ts',
         'src/hub/wiggle.ts',
+        'src/lab/circles/field.ts',
+        'src/lab/gravity/nbody.ts',
         'src/xr/useXrSupport.ts',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
