@@ -1,7 +1,9 @@
 import { OrbitControls } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import { Suspense, useEffect } from 'react'
+import { PerspectiveCamera } from 'three'
 import { getRoom, rooms } from '../content/registry'
+import { fitDistance } from '../lib/framing'
 import { MorphHub } from '../hub/MorphHub'
 import { SceneGate } from '../transition/SceneGate'
 import { VoidMask } from '../transition/VoidMask'
@@ -9,12 +11,19 @@ import { isLocked, shouldMountScene, usesRoomFraming } from '../transition/machi
 import type { Transition } from '../transition/useTransition'
 
 /** Close enough that one shape a metre across fills the frame, with the
- *  title legible below it. */
+ *  title legible below it. The Z is the landscape framing, and the floor the
+ *  camera is pulled back from on a narrower window — never closer. */
 const HUB_CAMERA = [0, 0.15, 3.3] as const
 const HUB_TARGET = [0, -0.3, 0] as const
 /** Close enough to read a panel two metres away. */
 const ROOM_CAMERA = [0, 0.75, 2.6] as const
 const ROOM_TARGET = [0, 0.4, -2] as const
+
+/**
+ * Reach of the biggest shape the hub will hold: the bound every shape is
+ * tested against, times the hub's scale, plus a little air.
+ */
+const HUB_RADIUS = 1.25
 
 /**
  * Moves the camera between hub and room framing. Both jumps land while the
@@ -23,14 +32,24 @@ const ROOM_TARGET = [0, 0.4, -2] as const
  */
 function CameraRig({ roomFraming, enabled }: { roomFraming: boolean; enabled: boolean }) {
   const camera = useThree((state) => state.camera)
+  const size = useThree((state) => state.size)
 
   useEffect(() => {
     if (!enabled) return
     const [px, py, pz] = roomFraming ? ROOM_CAMERA : HUB_CAMERA
     const [tx, ty, tz] = roomFraming ? ROOM_TARGET : HUB_TARGET
-    camera.position.set(px, py, pz)
+
+    // The hub is one object filling the frame, so it is the thing that runs
+    // off the sides when the window is portrait. The room is furniture with
+    // depth and keeps its framing — a panel two metres back already fits.
+    const fov = camera instanceof PerspectiveCamera ? camera.fov : 50
+    const distance = roomFraming
+      ? pz
+      : fitDistance(HUB_RADIUS, fov, size.width / size.height, pz)
+
+    camera.position.set(px, py, distance)
     camera.lookAt(tx, ty, tz)
-  }, [roomFraming, enabled, camera])
+  }, [roomFraming, enabled, camera, size])
 
   return null
 }

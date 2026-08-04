@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { Sphere, type BufferGeometry } from 'three'
 import { rooms } from '../../../src/content/registry'
+import { papercupShape } from '../../../src/shape/shapes/papercup'
 
 /**
  * The hub camera frames a shape of roughly this reach. A shape that grew past
@@ -54,5 +55,46 @@ describe('project shapes', () => {
       const second = room.shape().getAttribute('position').array
       expect(Array.from(second), room.id).toEqual(Array.from(first))
     }
+  })
+})
+
+/**
+ * Widest reach from the X axis among the vertices lying in a slice of X.
+ *
+ * The cups are surfaces of revolution about X once placed, so this is the
+ * radius of the cup wall at that point along its length.
+ */
+function radiusInSlice(geometry: BufferGeometry, from: number, to: number): number {
+  const position = geometry.getAttribute('position')
+  let widest = 0
+
+  for (let index = 0; index < position.count; index++) {
+    const x = position.getX(index)
+    if (x < from || x > to) continue
+    widest = Math.max(widest, Math.hypot(position.getY(index), position.getZ(index)))
+  }
+
+  return widest
+}
+
+describe('the paper cup telephone', () => {
+  // The string is knotted through the bottom of each cup. Get the quarter turn
+  // backwards and you get two funnels sharing a straw, which was the bug this
+  // pins: both cups had their mouths facing inward.
+  test('the cups meet base to base, with their mouths facing outward', () => {
+    const geometry = papercupShape()
+
+    // The right-hand cup runs from its base at x=0.36 to its mouth at x=0.84.
+    const atBase = radiusInSlice(geometry, 0.36, 0.45)
+    const atMouth = radiusInSlice(geometry, 0.75, 0.85)
+
+    expect(atMouth).toBeGreaterThan(atBase)
+  })
+
+  test('both cups face the same way out, so the shape is symmetric about X', () => {
+    const geometry = papercupShape()
+
+    expect(radiusInSlice(geometry, -0.45, -0.36)).toBeCloseTo(radiusInSlice(geometry, 0.36, 0.45), 5)
+    expect(radiusInSlice(geometry, -0.85, -0.75)).toBeCloseTo(radiusInSlice(geometry, 0.75, 0.85), 5)
   })
 })

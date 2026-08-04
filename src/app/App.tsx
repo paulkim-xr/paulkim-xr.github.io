@@ -1,6 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 import { getRoom, rooms, roomIndex } from '../content/registry'
 import { browsingIn, initialState } from '../transition/machine'
 import { useTransition } from '../transition/useTransition'
@@ -98,7 +98,7 @@ export function App() {
 
   return (
     <>
-      <LabNav />
+      {state.phase === 'inRoom' && <ExitButton onExit={exit} />}
       <Canvas camera={{ position: [0, 0.15, 3.3], fov: 50 }} data-testid="scene">
         <Stage activeIndex={activeIndex} transition={transition} onStep={step} xrMode={false} />
       </Canvas>
@@ -106,31 +106,32 @@ export function App() {
   )
 }
 
-const LAB_NAV_STYLE: React.CSSProperties = {
+const EXIT_STYLE: React.CSSProperties = {
   position: 'fixed',
-  right: '1.5rem',
-  bottom: '1.4rem',
-  display: 'flex',
-  gap: '1rem',
-  font: '400 0.8rem/1 system-ui, sans-serif',
+  left: '0.75rem',
+  top: '0.6rem',
+  // Comfortably past the 44px minimum touch target, which the bare text is not.
+  padding: '0.75rem 1rem',
+  background: 'none',
+  border: 'none',
+  color: '#c7cddb',
+  font: '400 0.85rem/1 system-ui, sans-serif',
+  cursor: 'pointer',
   zIndex: 1,
 }
 
 /**
- * Way through to the lab pieces.
+ * The way out of a room.
  *
- * Plain DOM rather than drei Text in the scene: these are links off the hub
- * entirely, and the hub's own canvas is busy being one morphing object.
+ * Leaving was bound to Escape and nothing else, which is no exit at all on a
+ * phone: there is no key to press, and the room fills the screen, so the only
+ * way back to the hub was the browser's own back button.
  */
-function LabNav() {
+function ExitButton({ onExit }: { onExit: () => void }) {
   return (
-    <nav style={LAB_NAV_STYLE}>
-      <Link to="/lab/circles" style={{ color: '#6f7787', textDecoration: 'none' }}>
-        circles
-      </Link>
-      <Link to="/lab/gravity" style={{ color: '#6f7787', textDecoration: 'none' }}>
-        gravity
-      </Link>
-    </nav>
+    <button type="button" onClick={onExit} style={EXIT_STYLE} data-testid="exit-room">
+      ← back
+    </button>
   )
 }
+

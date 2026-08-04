@@ -53,7 +53,7 @@ export const projects: Project[] = [
     blurb:
       'A flat study in distance fields. A grid of rings, each as wide as its distance to the nearest of three Bézier curves and coloured by how near it is to each of them.',
     links: [
-      { label: 'Open', href: 'https://paulkim-xr.github.io/lab/circles' },
+      { label: 'Open', href: '/lab/circles' },
       { label: 'Source', href: 'https://github.com/paulkim-xr/paulkim-space' },
     ],
   },
@@ -63,7 +63,7 @@ export const projects: Project[] = [
     blurb:
       'Nine bodies pulling on each other by an inverse square law inside a sealed box. It collapses into a heap, then throws itself apart again along a new axis every time.',
     links: [
-      { label: 'Open', href: 'https://paulkim-xr.github.io/lab/gravity' },
+      { label: 'Open', href: '/lab/gravity' },
       { label: 'Source', href: 'https://github.com/paulkim-xr/paulkim-space' },
     ],
   },

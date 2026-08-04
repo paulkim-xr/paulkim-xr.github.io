@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { BufferGeometry, CubicBezierCurve3, Float32BufferAttribute, Vector3 } from 'three'
+import { FitOrthographic } from '../Fit'
 import { buildCircleField } from './field'
 
 /**
@@ -23,6 +24,9 @@ const HEIGHT = 7.22
  * rather than left to buffer order. That is all it ever did in the original.
  */
 const DRAW_ORDER_SPREAD = 4
+
+/** Breathing room around the piece, so it never runs into the caption. */
+const FRAME_MARGIN = 0.94
 
 /** The three curves the colour channels are measured from, in grid units. */
 function channelCurves(phase: number) {
@@ -84,9 +88,32 @@ export function CirclesScene() {
 
   useEffect(() => () => geometry.dispose(), [geometry])
 
+  /**
+   * How much room the drawn piece actually takes.
+   *
+   * Not WIDTH and HEIGHT: those size the grid of ring *centres*, and a ring is
+   * as wide as its distance to the nearest curve, so the drawing spills well
+   * past the grid on every side. Measured off the built geometry, and doubled
+   * about the origin because the camera looks at the origin and cannot be
+   * asked to fit something lopsided by zoom alone.
+   */
+  const extent = useMemo(() => {
+    geometry.computeBoundingBox()
+    const box = geometry.boundingBox
+    if (!box) return { width: WIDTH, height: HEIGHT }
+
+    return {
+      width: 2 * Math.max(Math.abs(box.min.x), Math.abs(box.max.x)),
+      height: 2 * Math.max(Math.abs(box.min.y), Math.abs(box.max.y)),
+    }
+  }, [geometry])
+
   return (
-    <lineSegments geometry={geometry} frustumCulled={false}>
-      <lineBasicMaterial vertexColors toneMapped={false} transparent opacity={0.85} />
-    </lineSegments>
+    <>
+      <FitOrthographic width={extent.width} height={extent.height} margin={FRAME_MARGIN} />
+      <lineSegments geometry={geometry} frustumCulled={false}>
+        <lineBasicMaterial vertexColors toneMapped={false} transparent opacity={0.85} />
+      </lineSegments>
+    </>
   )
 }

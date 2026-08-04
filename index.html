@@ -26,13 +26,32 @@
       body,
       #root {
         margin: 0;
+        /* dvh, not %: mobile browsers grow and shrink the visible viewport as
+           their toolbars slide away, and a percentage of a height that is
+           itself changing leaves a strip of page showing under the canvas.
+           The percentage stays as the fallback for anything without dvh. */
         height: 100%;
+        height: 100dvh;
         background: #000;
         overflow: hidden;
+        /* No rubber-banding or pull-to-refresh on a page that cannot scroll. */
+        overscroll-behavior: none;
       }
       body {
         font-family: system-ui, sans-serif;
         color: #fff;
+      }
+      canvas {
+        /* The hub reads horizontal drags to browse, and OrbitControls reads
+           them to look around. Left to itself the browser claims those first,
+           for panning and pull-to-refresh, and the gesture never reaches the
+           page.
+
+           !important because OrbitControls writes `touch-action: auto` inline
+           on the canvas when it disconnects, and an inline declaration beats a
+           plain rule. Forcing it is what OrbitControls itself wants — it sets
+           `none` whenever it is connected. */
+        touch-action: none !important;
       }
     </style>
   </head>

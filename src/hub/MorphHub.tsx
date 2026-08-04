@@ -1,10 +1,10 @@
-import { Text } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import type { Group, MeshBasicMaterial } from 'three'
 import type { Room } from '../content/registry'
-import { DISPLAY_FONT } from '../lib/font'
+import { CanvasText } from '../lib/CanvasText'
 import { WigglyGeometry } from '../lib/morph/WigglyGeometry'
+import { browseHint, coarsePointer } from '../lib/pointer'
 import { EDGE_OPACITY, FILL_OPACITY, ShapeSurface } from '../shape/ShapeSurface'
 import { bufferSizeFor } from './budget'
 import { morphFade, type MorphTiming } from './fade'
@@ -37,6 +37,13 @@ const SHAPE_SCALE = 1.15
 const HIT_RADIUS = 1.05
 /** Horizontal pointer travel, in pixels, that counts as one step. */
 const DRAG_STEP_PX = 110
+/**
+ * Travel, in pixels, past which a gesture stops being a tap.
+ *
+ * A finger never lands and lifts on exactly one pixel, so a tap needs a little
+ * tolerance; a swipe needs to not be mistaken for one at any cost.
+ */
+const TAP_SLOP_PX = 10
 
 type MorphHubProps = {
   rooms: Room[]
@@ -51,24 +58,47 @@ type MorphHubProps = {
  * Wheel and drag stepping, bound at the window rather than to the shape, so
  * input works anywhere in the viewport instead of only over a silhouette that
  * is a different size every second of the morph.
+ *
+ * Returns whether the gesture in progress has become a drag. The hub's hit
+ * sphere needs this: a browser fires `click` on pointer-up whether the pointer
+ * moved a pixel or crossed the screen, so without it every swipe also selects
+ * whatever it finished on top of. On a phone, where swiping is the only way to
+ * browse at all, that means the site opens a room you were scrolling past.
  */
 function usePointerStep(onStep: (delta: number) => void, enabled: boolean) {
+  const dragged = useRef(false)
+
   useEffect(() => {
     if (!enabled) return
 
     let originX: number | null = null
+    let downX = 0
+    let downY = 0
 
     const wheel = (event: WheelEvent) => onStep(Math.sign(event.deltaY))
     const down = (event: PointerEvent) => {
       originX = event.clientX
+      downX = event.clientX
+      downY = event.clientY
+      dragged.current = false
     }
     const move = (event: PointerEvent) => {
       if (originX === null) return
+
+      // Measured from where the finger landed, not from the last step: the
+      // step origin is reset on every step, so travel from it says nothing
+      // about whether this gesture as a whole was a tap.
+      if (Math.hypot(event.clientX - downX, event.clientY - downY) > TAP_SLOP_PX) {
+        dragged.current = true
+      }
+
       const travel = event.clientX - originX
       if (Math.abs(travel) < DRAG_STEP_PX) return
       onStep(-Math.sign(travel)) // drag right brings the previous project forward
       originX = event.clientX
     }
+    // `dragged` deliberately survives pointer-up: the click it has to suppress
+    // is dispatched after it. The next pointer-down clears it.
     const up = () => {
       originX = null
     }
@@ -86,6 +116,8 @@ function usePointerStep(onStep: (delta: number) => void, enabled: boolean) {
       window.removeEventListener('pointercancel', up)
     }
   }, [onStep, enabled])
+
+  return dragged
 }
 
 /** Opacity for one layer of the cross-fade, dissolve and weight combined. */
@@ -176,7 +208,11 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
     steppedAt.current = clock.getElapsedTime()
   }, [activeIndex, clock])
 
-  usePointerStep(onStep, !dimmed)
+  const dragged = usePointerStep(onStep, !dimmed)
+
+  // Read once. A pointer type does not change mid-visit, and re-reading it
+  // every frame would re-lay out the text.
+  const touch = useMemo(coarsePointer, [])
 
   const outgoingFill = useRef<MeshBasicMaterial>(null)
   const outgoingEdge = useRef<MeshBasicMaterial>(null)
@@ -277,7 +313,7 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
         <mesh
           onClick={(event) => {
             event.stopPropagation()
-            if (dimmed) return
+            if (dimmed || dragged.current) return
             onSelect(room.id)
           }}
           onPointerOver={(event) => {
@@ -294,25 +330,13 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
       </group>
 
       {/* Outside the spinning group: a label that turns away is no label. */}
-      <Text
-        font={DISPLAY_FONT}
-        position={[0, -1.25, 0]}
-        fontSize={0.2}
-        anchorX="center"
-        color="#ffffff"
-      >
+      <CanvasText position={[0, -1.25, 0]} fontSize={0.2} anchorX="center" color="#ffffff">
         {room.title}
-      </Text>
+      </CanvasText>
 
-      <Text
-        font={DISPLAY_FONT}
-        position={[0, -1.52, 0]}
-        fontSize={0.075}
-        anchorX="center"
-        color="#6f7787"
-      >
-        ← → to browse · click to enter
-      </Text>
+      <CanvasText position={[0, -1.52, 0]} fontSize={0.075} anchorX="center" color="#6f7787">
+        {browseHint(touch)}
+      </CanvasText>
     </group>
   )
 }

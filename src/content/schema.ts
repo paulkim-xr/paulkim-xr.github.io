@@ -2,7 +2,14 @@ import { z } from 'zod'
 
 export const LinkSchema = z.object({
   label: z.string().min(1),
-  href: z.url(),
+  /**
+   * Either somewhere else entirely, or a route of this site.
+   *
+   * The lab pieces are projects in their own right and have rooms like any
+   * other, but the piece itself is a route here — so its panel has to be able
+   * to point inwards. A root-relative path is how it says so.
+   */
+  href: z.union([z.url(), z.string().regex(/^\/[^/]/)]),
 })
 
 export const ProjectSchema = z.object({

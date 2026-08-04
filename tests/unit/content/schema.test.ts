@@ -26,9 +26,24 @@ describe('ProjectSchema', () => {
     expect(() => ProjectSchema.parse({ ...valid, blurb: 'x'.repeat(281) })).toThrow()
   })
 
-  test('rejects a link href that is not an absolute URL', () => {
+  test('accepts a link to a route of this site', () => {
+    // The lab pieces live at routes here, and their panels point inwards.
     expect(() =>
-      ProjectSchema.parse({ ...valid, links: [{ label: 'Repo', href: '/relative' }] }),
+      ProjectSchema.parse({ ...valid, links: [{ label: 'Open', href: '/lab/circles' }] }),
+    ).not.toThrow()
+  })
+
+  test('rejects a link href that is neither a URL nor a route', () => {
+    expect(() =>
+      ProjectSchema.parse({ ...valid, links: [{ label: 'Repo', href: 'lab/circles' }] }),
+    ).toThrow()
+  })
+
+  test('rejects a protocol-relative href posing as a route', () => {
+    // `//evil.example` reads as a path and navigates off-site. It has to fail
+    // the route check, or an internal-looking link leaves the origin.
+    expect(() =>
+      ProjectSchema.parse({ ...valid, links: [{ label: 'Repo', href: '//evil.example/x' }] }),
     ).toThrow()
   })
 

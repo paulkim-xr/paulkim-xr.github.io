@@ -1,7 +1,7 @@
-import { Text } from '@react-three/drei'
 import { useState } from 'react'
+import { useNavigate } from 'react-router'
 import type { Link } from '../content/schema'
-import { DISPLAY_FONT } from '../lib/font'
+import { CanvasText } from '../lib/CanvasText'
 
 const PANEL_WIDTH = 2.4
 
@@ -21,8 +21,7 @@ export function InfoPanel({
         <meshBasicMaterial color="#101017" toneMapped={false} />
       </mesh>
 
-      <Text
-        font={DISPLAY_FONT}
+      <CanvasText
         position={[0, 0.5, 0]}
         fontSize={0.16}
         maxWidth={PANEL_WIDTH}
@@ -30,10 +29,9 @@ export function InfoPanel({
         color="#ffffff"
       >
         {title}
-      </Text>
+      </CanvasText>
 
-      <Text
-        font={DISPLAY_FONT}
+      <CanvasText
         position={[0, 0.32, 0]}
         fontSize={0.075}
         maxWidth={PANEL_WIDTH}
@@ -43,7 +41,7 @@ export function InfoPanel({
         color="#b9bfcc"
       >
         {blurb}
-      </Text>
+      </CanvasText>
 
       <group position={[0, -0.52, 0]}>
         {links.map((link, index) => (
@@ -60,6 +58,9 @@ export function InfoPanel({
 
 function LinkButton({ link, position }: { link: Link; position: [number, number, number] }) {
   const [hovered, setHovered] = useState(false)
+  // Router context reaches in here: R3F renders the canvas into a root of its
+  // own, and bridges the surrounding context across.
+  const navigate = useNavigate()
 
   return (
     <group position={position}>
@@ -75,6 +76,13 @@ function LinkButton({ link, position }: { link: Link; position: [number, number,
         }}
         onClick={(event) => {
           event.stopPropagation()
+          // A route of this site is a route, not a new tab. Sending it through
+          // window.open would open a second copy of the site — and against a
+          // local build, an absolute link would have opened production.
+          if (link.href.startsWith('/')) {
+            void navigate(link.href)
+            return
+          }
           // noopener is not optional: without it the opened page gets a handle
           // on this window through window.opener.
           window.open(link.href, '_blank', 'noopener,noreferrer')
@@ -83,9 +91,9 @@ function LinkButton({ link, position }: { link: Link; position: [number, number,
         <planeGeometry args={[0.85, 0.18]} />
         <meshBasicMaterial color={hovered ? '#3a5bd9' : '#1e2333'} toneMapped={false} />
       </mesh>
-      <Text font={DISPLAY_FONT} position={[0, 0, 0.01]} fontSize={0.065} color="#ffffff">
+      <CanvasText position={[0, 0, 0.01]} fontSize={0.065} color="#ffffff">
         {link.label}
-      </Text>
+      </CanvasText>
     </group>
   )
 }
