@@ -33,9 +33,45 @@ Every task's requirements implicitly include this section. Values are copied ver
   - Textures ≤1024 for panels
   - Baked lighting; no realtime shadows in XR
   - Target **<100 draw calls per room**
-- **Coverage:** the global 80% rule applies to `src/lib/`, `src/transition/`, `src/hub/ring.ts`, and `src/content/`. It is deliberately **not** pursued for R3F scene components — asserting on a three.js scene graph tests three.js, not this codebase. This deviation was raised and accepted in the spec.
+- **Coverage:** the global 80% rule applies to `src/lib/`, `src/transition/`, `src/content/`, `src/shape/merge.ts`, `src/shape/shapes/`, `src/hub/budget.ts` and `src/hub/wiggle.ts` (was `src/hub/ring.ts` — see Amendment A). It is deliberately **not** pursued for R3F scene components — asserting on a three.js scene graph tests three.js, not this codebase. This deviation was raised and accepted in the spec.
 - **Commit identity** in this repo is `Paul Kim <paul.kim.dev@gmail.com>` (already set repo-locally). Conventional-commit prefixes: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`. No AI attribution trailers.
 - **Projects in scope (exactly five):** `papercup`, `SkiWatch`, `open-ski-data`, `project-beta`, `cli-p2p-boardgame`. Nothing else is presentable.
+
+---
+
+## Amendment A — the hub is a morph, not a ring (2026-08-04)
+
+Tasks 6, 7 and 13 as written below describe a rotating ring of five preview components. **That was a misreading of the brief** and is superseded. Paul: *"It was designed to morph an object to another object, as paulkim-xr/paulkim-space shows."*
+
+The hub is **one mesh**. Every vertex of the shape on screen flies to a vertex of the next project's shape. Browsing is a continuous body, not a carousel of separate ones.
+
+**What this replaces**
+
+| Removed | Replaced by |
+| --- | --- |
+| `src/hub/ring.ts` — ring math | nothing; there is no ring |
+| `src/hub/Carousel3D.tsx` | `src/hub/MorphHub.tsx` |
+| `src/hub/previews/*.tsx` — five R3F component trees | `src/shape/shapes/*.ts` — five `BufferGeometry` factories |
+| `Room.preview: ComponentType<{selected}>` | `Room.shape: () => BufferGeometry` + `Room.accent: string` |
+
+**What survives untouched:** the transition reducer, the room registry, the content schema, the exhibit template, camera framing, routing and deep links, and the deploy pipeline. Two of twelve source files were replaced.
+
+**Decisions taken during the rebuild**
+
+- **The void mask stays a separate mask** rather than being absorbed into `transformTo`. Paul's call, asked and answered.
+- **The exhibit shows the same geometry** the hub morphed into, standing still on the plinth. Continuity for free, and one less thing per project to design.
+- **Vertex buffer is derived, not chosen.** `bufferSizeFor(rooms)` returns the largest shape's deduplicated vertex count — currently 187. `WigglyGeometry` pads to this size every frame and never reallocates, so a hard-coded value either overruns (a throw mid-morph) or wastes float writes on a 72Hz budget. Deriving it means adding a project cannot silently break either way.
+- **Idle drift is capped by the finest feature, not by what looks lively.** `WIGGLE_DOF = 0.01`; at 0.022 the drift exceeded project-beta's route tube radius and shook it into a zigzag.
+- **Movements carry 6 waypoints, not `Movement`'s default 30.** `getCurrentPoint` scans the list linearly per vertex per frame; at a few hundred vertices that scan is the hub's whole per-frame cost.
+
+**Defects found and fixed during the rebuild** — all four were invisible to unit tests and surfaced only by driving a real browser:
+
+1. **Stale wireframe after every morph.** three caches one wireframe index per geometry and rebuilds it only when the index attribute's `version` *increases*. `WigglyGeometry` swaps in a whole new index attribute, which starts at version 0, so the wireframe kept drawing the shape before last — spanning edges between parts no longer connected, and no edges at all over parts that were. Fixed in `MorphHub` with a monotonic version bump on index identity change.
+2. **The hub drew on top of the room.** `Stage` used `showHub = phase !== 'inRoom'`, which stays true through `revealing` — the phase where the mask opens on a room the camera already points at. Invisible with a ring at radius 3 (off-camera); centre-frame with a morph. Now `showHub = !usesRoomFraming(state)`.
+3. **`Movement`'s `dof` option did nothing.** `maxDist` was assigned *after* the random-path loop that reads it, so every generated walk used the default 0.3 regardless of what the caller asked for. Fixed in the ported file.
+4. **`Movement.removeRange` skipped every other segment** — it walked indices forwards while splicing, so each removal shifted the rest down past the cursor. Now walks back to front.
+
+Items 3 and 4 are changes to ported prototype code, on top of the two from the original port (a dead `const count`, a stripped `console.log`). Worth syncing back to `paulkim-space`.
 
 ---
 
@@ -63,12 +99,17 @@ paulkim-xr.github.io/
     │   ├── App.tsx                   reads router state, owns <Canvas>, passes props down
     │   ├── Stage.tsx                 everything inside <Canvas>; pure props, no router hooks
     │   └── EnterXrButton.tsx         DOM overlay button, gated on XR support
-    ├── hub/
-    │   ├── ring.ts                   pure carousel ring math                    [tested]
-    │   ├── Carousel3D.tsx            the project ring
-    │   └── previews/                 one small R3F component per project
-    │       ├── PapercupPreview.tsx  SkiWatchPreview.tsx  OpenSkiDataPreview.tsx
-    │       └── ProjectBetaPreview.tsx  BoardgamePreview.tsx
+    ├── hub/                          (rebuilt — see Amendment A)
+    │   ├── MorphHub.tsx              the one mesh that morphs between projects
+    │   ├── budget.ts                 fixed vertex-buffer sizing                 [tested]
+    │   └── wiggle.ts                 idle per-vertex drift                      [tested]
+    ├── shape/
+    │   ├── merge.ts                  compose primitives into one geometry       [tested]
+    │   ├── ShapeSurface.tsx          how a shape is drawn: fill + wireframe
+    │   ├── useShape.ts               build once, dispose on unmount
+    │   └── shapes/                   one geometry factory per project           [tested]
+    │       ├── papercup.ts  skiwatch.ts  openSkiData.ts
+    │       └── projectBeta.ts  boardgame.ts
     ├── transition/
     │   ├── machine.ts                pure reducer + guards                      [tested]
     │   ├── useTransition.ts          React binding for the reducer
@@ -110,7 +151,14 @@ tests/
 - Consumes: nothing.
 - Produces: `damp(current: number, target: number, lambda: number, dt: number): number` from `src/lib/damp.ts`. Every animated value in later tasks uses this rather than a fixed per-frame lerp.
 
-- [ ] **Step 1: Initialise the package and install dependencies**
+- [x] **Step 1: Initialise the package and install dependencies**
+
+**Node 22.22.3 or newer is required.** `react-router` v8 declares `engines.node >= 22.22.0`, and the VM defaults to Node 20. An `.nvmrc` pins it:
+
+```bash
+echo "22.22.3" > .nvmrc
+nvm use   # or: export PATH=$HOME/.nvm/versions/node/v22.22.3/bin:$PATH
+```
 
 Run from the repo root (`/home/papercup/workspaces/paulkim-xr.github.io`):
 
@@ -125,15 +173,18 @@ npm install react@^19.2.6 react-dom@^19.2.6 three@^0.184.0 \
 
 npm install -D vite@^8.0.14 @vitejs/plugin-react@^6.0.2 typescript@^6.0.3 \
   @types/react@^19.2.15 @types/react-dom@^19.2.3 @types/three@^0.184.1 \
+  @types/node@latest \
   vitest@latest @vitest/coverage-v8@latest jsdom@latest @playwright/test@latest
 ```
 
 Two compatibility constraints that `@latest` must satisfy — check them after install:
 
 - `@react-three/drei` must resolve to the **v10 line or newer**. Drei v9 targets R3F v8 and will fail against R3F 9 / React 19.
-- `react-router` v7 exports `BrowserRouter`, `Routes`, `Route`, `useParams`, `useNavigate` from the **`react-router`** package directly. Do **not** install `react-router-dom`.
+- `react-router` exports `BrowserRouter`, `Routes`, `Route`, `useParams`, `useNavigate` from the **`react-router`** package directly. Do **not** install `react-router-dom`.
 
 Verify: `npm ls @react-three/drei react-router` and confirm drei is `10.x` or higher.
+
+**Versions this was executed against (2026-08-04):** react 19.2.8, react-dom 19.2.8, three 0.184.0, @react-three/fiber 9.7.0, @react-three/drei 10.7.7, @react-three/xr 6.6.30, react-router 8.3.0, zod 4.4.3, vite 8.2.0, typescript 6.0.3, vitest 4.1.10, @playwright/test 1.62.1.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -205,8 +256,9 @@ Expected: PASS, 4 tests.
 `vite.config.ts`:
 
 ```ts
-/// <reference types="vitest" />
-import { defineConfig } from 'vite'
+// Vitest 4 no longer augments Vite's UserConfig via a triple-slash reference;
+// the `test` key is only typed on vitest/config's defineConfig.
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
@@ -234,7 +286,7 @@ export default defineConfig({
 })
 ```
 
-`tsconfig.json`:
+`tsconfig.json` — a **single** config, with no project references. TypeScript 6 rejects the conventional Vite two-file split (`composite: true` together with `noEmit: true` is TS6310), and one config that covers source, tests and the build configs is simpler than working around it:
 
 ```json
 {
@@ -251,28 +303,14 @@ export default defineConfig({
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
-    "types": ["vite/client"]
-  },
-  "include": ["src", "tests"],
-  "references": [{ "path": "./tsconfig.node.json" }]
-}
-```
-
-`tsconfig.node.json`:
-
-```json
-{
-  "compilerOptions": {
-    "composite": true,
-    "module": "ESNext",
-    "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
-    "strict": true,
-    "noEmit": true
+    "types": ["vite/client", "node"]
   },
-  "include": ["vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]
 }
 ```
+
+`"node"` in `types` is not optional: Vite 8's own `.d.ts` references `Buffer`, so without `@types/node` the build fails with ~20 `TS2591` errors pointing into `node_modules`.
 
 `.gitignore`:
 
@@ -290,7 +328,7 @@ Add scripts:
 
 ```bash
 npm pkg set scripts.dev="vite" \
-  scripts.build="tsc -b && vite build" \
+  scripts.build="tsc --noEmit && vite build" \
   scripts.preview="vite preview --port 4173" \
   scripts.test="vitest run" \
   scripts.test:watch="vitest" \
@@ -378,7 +416,7 @@ export function App() {
 - [ ] **Step 8: Verify the build and dev server**
 
 Run: `npm run build`
-Expected: `tsc -b` passes with no errors, and Vite writes `dist/`.
+Expected: `tsc --noEmit` passes with no errors, and Vite writes `dist/`. The ~1.1 MB bundle warning is three.js and is expected — the code splitting in this plan is per-room, not per-library.
 
 Run: `npm run dev`, open `http://localhost:5173`, confirm a shaded torus knot renders. Stop the server.
 
@@ -467,7 +505,9 @@ export function App() {
 - [ ] **Step 2: Confirm the readout locally**
 
 Run: `npm run dev`, open `http://localhost:5173`.
-Expected: `isSecureContext: true` (localhost is always a secure context) and `navigator.xr present: false` on a desktop browser with no headset runtime.
+Expected: `isSecureContext: true` (localhost is always a secure context).
+
+`navigator.xr present` was predicted here as `false` on a desktop browser with no headset runtime. **Measured 2026-08-04: it is `true`** — Chromium exposes the `navigator.xr` object regardless of whether any runtime is installed. Presence proves nothing; only `isSessionSupported('immersive-vr')` answers the question, which is why the readout below reports both.
 
 - [ ] **Step 3: Expose the dev server over the funnel**
 
@@ -1261,11 +1301,31 @@ describe('targetRotation', () => {
     expect(Math.abs(rotation)).toBeCloseTo(step)
   })
 
-  test('accumulates instead of snapping back across the seam', () => {
+  test('advancing one index rotates by exactly one step, negatively', () => {
     const step = angleStep(5)
     const first = targetRotation(0, 1, 5)
     const second = targetRotation(first, 2, 5)
-    expect(second - first).toBeCloseTo(step)
+    // Item 0 sits at +Z, so bringing a later item to the front rotates the
+    // ring the negative way. What matters is the magnitude and consistency.
+    expect(first).toBeCloseTo(-step)
+    expect(second - first).toBeCloseTo(-step)
+  })
+
+  test('accumulates around a full loop instead of snapping back at the seam', () => {
+    const step = angleStep(5)
+    let rotation = 0
+    const deltas: number[] = []
+
+    // 0 -> 1 -> 2 -> 3 -> 4 -> 0. The last hop crosses the seam and is the one
+    // a naive implementation unwinds by four steps.
+    for (const index of [1, 2, 3, 4, 0]) {
+      const next = targetRotation(rotation, index, 5)
+      deltas.push(next - rotation)
+      rotation = next
+    }
+
+    for (const delta of deltas) expect(delta).toBeCloseTo(-step)
+    expect(rotation).toBeCloseTo(-step * 5)
   })
 })
 ```
@@ -2363,21 +2423,41 @@ export function App() {
     return () => window.clearTimeout(timer)
   }, [state.phase, state.target, focusComplete])
 
-  // The URL follows the machine, so history and the machine cannot disagree.
-  useEffect(() => {
-    if (state.phase === 'masking' && state.direction === 'in' && state.target) {
-      navigate(`/p/${state.target}`)
-    }
-    if (state.phase === 'browsing') {
-      navigate('/')
-    }
-  }, [state.phase, state.direction, state.target, navigate])
+  const currentPath = id ? `/p/${id}` : '/'
+  /**
+   * The path the machine last asked for, held until the router catches up.
+   *
+   * Both directions of sync are needed — the machine pushes history, and
+   * back/forward pushes the machine — but without an authorship marker they
+   * feed each other: on exit the machine reaches `browsing` while `id` is
+   * still the room for one tick, and the URL-to-machine effect immediately
+   * re-selects the room that was just left. Escape then appears to do nothing.
+   */
+  const pendingPath = useRef<string | null>(null)
 
-  // Back/forward: the URL changed without the machine asking. Follow it.
+  // Machine -> URL.
   useEffect(() => {
-    if (!id && state.phase === 'inRoom') exit()
-    if (id && state.phase === 'browsing' && getRoom(id)) select(id)
-  }, [id, state.phase, exit, select])
+    let want: string | null = null
+    if (state.phase === 'masking' && state.direction === 'in' && state.target) {
+      want = `/p/${state.target}`
+    } else if (state.phase === 'browsing') {
+      want = '/'
+    }
+
+    if (want === null || want === currentPath) return
+    pendingPath.current = want
+    void navigate(want)
+  }, [state.phase, state.direction, state.target, currentPath, navigate])
+
+  // URL -> machine, but only for changes the machine did not author.
+  useEffect(() => {
+    if (pendingPath.current !== null) {
+      if (pendingPath.current === currentPath) pendingPath.current = null
+      return
+    }
+    if (state.phase === 'inRoom' && !id) exit()
+    if (state.phase === 'browsing' && id && getRoom(id)) select(id)
+  }, [id, currentPath, state.phase, exit, select])
 
   // Flat keyboard parity with the carousel's wheel and the XR thumbstick.
   useEffect(() => {
@@ -2650,6 +2730,33 @@ export default function Exhibit({ room }: { room: Room }) {
 }
 ```
 
+- [ ] **Step 3b: Camera framing (added during execution)**
+
+The plan originally left the camera fixed at the hub position for both the hub
+and every room. It does not work: the hub camera sits back far enough to see a
+ring of radius 3, which puts a room's panel ~9 units away and its text
+illegible. One camera position cannot serve both.
+
+The framing swap is free because it happens while the void is fully closed.
+`usesRoomFraming` in `src/transition/machine.ts` decides when, and is tested
+alongside the rest of the reducer:
+
+```ts
+export function usesRoomFraming(state: TransitionState): boolean {
+  if (state.direction === 'out') return state.phase === 'masking'
+  return state.phase === 'swapping' || state.phase === 'revealing' || state.phase === 'inRoom'
+}
+```
+
+Entering, framing switches at `swapping` — the first phase where the mask is
+fully closed. Leaving, room framing is *held* through `masking` and released at
+`swapping`, so again the cut lands behind a closed mask. `CameraRig` in
+`Stage.tsx` applies it, and is disabled in XR where the headset owns the camera.
+
+Room layout follows from the framing: object low and forward at
+`[0, -1.3, -1.4]`, panel high and behind at `[0, 1.35, -3.4]`, so neither
+occludes the other from the room camera or while orbiting.
+
 - [ ] **Step 4: Verify by hand**
 
 Run: `npm run dev`, enter each of the five projects in turn.
@@ -2692,7 +2799,13 @@ The placeholders from Task 5 are legible but arbitrary. Each preview should say 
 
 **Budget:** each preview is mounted permanently in the carousel and again in its exhibit. Keep every one under **6 draw calls** and use no textures. Five previews therefore cost at most 30 of the 100-draw-call room budget.
 
-**On reusing the prototype pieces.** The spec lists `circles`, `gravity`, `roulette`, `spherical`, `Carousel3D` and `WigglyMesh` from `paulkim-space` as available source material. They are deliberately not ported here. The prototype's `Carousel3D` is a stub — seven unstyled spheres — with nothing to salvage, and the rest are untyped JavaScript written against R3F v8, so porting costs more than writing a five-primitive preview from scratch. They remain genuine candidates for **room furniture** in a bespoke scene, where their behaviour is the point; they are poor candidates for previews, where the requirement is to read instantly at thumbnail scale. Revisit them when writing the M3 plan.
+**On reusing the prototype pieces — CORRECTED 2026-08-04.**
+
+This paragraph originally read: *"The prototype's `Carousel3D` is a stub — seven unstyled spheres — with nothing to salvage, and the rest are untyped JavaScript written against R3F v8, so porting costs more than writing a five-primitive preview from scratch."*
+
+That was wrong, and wrong in the way that matters: it judged a directory by one file. `Carousel3D.tsx` **is** a stub, but `Movement.ts` and `WigglyGeometry.ts` next to it are TypeScript, pure three.js, and carry no R3F coupling at all. They are the prototype's actual carousel — a single mesh whose vertices fly from one project's shape to the next — and the "3D carousel" in the spec means *that*, not a ring of five objects taking turns.
+
+Both files port to three 0.184 under TS 6 strict with one dead variable removed and one `console.log` stripped. See **Amendment A** for the rebuild that follows from this.
 
 - [ ] **Step 1: papercup — two cups and a taut line**
 
