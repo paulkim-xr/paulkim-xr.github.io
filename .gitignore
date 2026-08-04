@@ -10,3 +10,4 @@ playwright-report/
 .nvmrc.local
 .walk.mjs
 .shim.mjs
+.morph.mjs

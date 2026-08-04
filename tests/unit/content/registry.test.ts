@@ -7,9 +7,16 @@ describe('room registry', () => {
     expect(rooms).toHaveLength(projects.length)
   })
 
-  test('every room carries a preview component', () => {
+  test('every room carries a shape factory that builds a geometry', () => {
     for (const room of rooms) {
-      expect(typeof room.preview, `${room.id} preview`).toBe('function')
+      expect(typeof room.shape, `${room.id} shape`).toBe('function')
+      expect(room.shape().getAttribute('position'), `${room.id} positions`).toBeTruthy()
+    }
+  })
+
+  test('every room carries an accent colour', () => {
+    for (const room of rooms) {
+      expect(room.accent, `${room.id} accent`).toMatch(/^#[0-9a-f]{6}$/)
     }
   })
 

@@ -2,15 +2,16 @@ import { OrbitControls } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import { Suspense, useEffect } from 'react'
 import { getRoom, rooms } from '../content/registry'
-import { Carousel3D } from '../hub/Carousel3D'
+import { MorphHub } from '../hub/MorphHub'
 import { SceneGate } from '../transition/SceneGate'
 import { VoidMask } from '../transition/VoidMask'
 import { isLocked, shouldMountScene, usesRoomFraming } from '../transition/machine'
 import type { Transition } from '../transition/useTransition'
 
-/** Far enough out to see the whole ring of radius 3. */
-const HUB_CAMERA = [0, 0.6, 7] as const
-const HUB_TARGET = [0, 0, 0] as const
+/** Close enough that one shape a metre across fills the frame, with the
+ *  title legible below it. */
+const HUB_CAMERA = [0, 0.15, 3.3] as const
+const HUB_TARGET = [0, -0.3, 0] as const
 /** Close enough to read a panel two metres away. */
 const ROOM_CAMERA = [0, 0.75, 2.6] as const
 const ROOM_TARGET = [0, 0.4, -2] as const
@@ -44,8 +45,16 @@ type StageProps = {
 export function Stage({ activeIndex, transition, onStep, xrMode }: StageProps) {
   const { state } = transition
   const room = state.target ? getRoom(state.target) : undefined
-  const showHub = state.phase !== 'inRoom'
   const Scene = room?.scene
+
+  /**
+   * The hub is visible exactly while the camera is in hub framing.
+   *
+   * Not `phase !== 'inRoom'`: that also draws the hub through `revealing`,
+   * when the mask is opening on a room the camera is already pointed at, so
+   * the hub would sit in the middle of the room it just handed over to.
+   */
+  const showHub = !usesRoomFraming(state)
 
   return (
     <>
@@ -56,7 +65,7 @@ export function Stage({ activeIndex, transition, onStep, xrMode }: StageProps) {
       <CameraRig roomFraming={usesRoomFraming(state)} enabled={!xrMode} />
 
       {showHub && (
-        <Carousel3D
+        <MorphHub
           rooms={rooms}
           activeIndex={activeIndex}
           onStep={onStep}

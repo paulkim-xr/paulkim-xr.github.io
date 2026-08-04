@@ -87,7 +87,7 @@ export function App() {
   }, [state.phase, state.target])
 
   return (
-    <Canvas camera={{ position: [0, 0.6, 7], fov: 50 }} data-testid="scene">
+    <Canvas camera={{ position: [0, 0.15, 3.3], fov: 50 }} data-testid="scene">
       <Stage activeIndex={activeIndex} transition={transition} onStep={step} xrMode={false} />
     </Canvas>
   )

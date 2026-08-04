@@ -60,6 +60,13 @@ export class Movement {
    * @param maxDist The maximum random distance from the origin of the movement.
    */
   constructor({ paths, timings, origin, closed, loop, dof: maxDist }: { paths?: CurvePath<Vector3> | Vector3[]; timings?: Curve<Vector2>[]; origin?: Vector3; closed?: boolean; loop?: boolean; dof?: number } = {}) {
+    // Before the paths, not after: addRandomPath reads maxDist, so assigning
+    // it later left every generated walk bounded by the default instead of by
+    // the dof the caller asked for.
+    if (maxDist) {
+      this.maxDist = maxDist;
+    }
+
     if (paths instanceof CurvePath || Array.isArray(paths)) {
       this.paths = paths;
     } else {
@@ -84,10 +91,6 @@ export class Movement {
 
     if (loop !== undefined) {
       this.loop = loop;
-    }
-
-    if (maxDist) {
-      this.maxDist = maxDist;
     }
   }
 
@@ -251,13 +254,15 @@ export class Movement {
    */
   removeRange(start: number, end?: number): Curve<Vector3>[] | undefined {
     const removed: Curve<Vector3>[] = [];
-    for (let i = start; i < (end ?? this._paths.curves.length); i++) {
+    // Back to front: removing shifts every later index down, so walking
+    // forwards skipped one segment for each one it took out.
+    for (let i = (end ?? this._paths.curves.length) - 1; i >= start; i--) {
       const temp = this.remove(i);
       if (temp) {
         removed.push(temp);
       }
     }
-    return removed;
+    return removed.reverse();
   }
 
   /**

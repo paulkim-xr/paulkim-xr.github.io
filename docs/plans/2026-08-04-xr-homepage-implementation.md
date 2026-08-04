@@ -33,9 +33,45 @@ Every task's requirements implicitly include this section. Values are copied ver
   - Textures ≤1024 for panels
   - Baked lighting; no realtime shadows in XR
   - Target **<100 draw calls per room**
-- **Coverage:** the global 80% rule applies to `src/lib/`, `src/transition/`, `src/hub/ring.ts`, and `src/content/`. It is deliberately **not** pursued for R3F scene components — asserting on a three.js scene graph tests three.js, not this codebase. This deviation was raised and accepted in the spec.
+- **Coverage:** the global 80% rule applies to `src/lib/`, `src/transition/`, `src/content/`, `src/shape/merge.ts`, `src/shape/shapes/`, `src/hub/budget.ts` and `src/hub/wiggle.ts` (was `src/hub/ring.ts` — see Amendment A). It is deliberately **not** pursued for R3F scene components — asserting on a three.js scene graph tests three.js, not this codebase. This deviation was raised and accepted in the spec.
 - **Commit identity** in this repo is `Paul Kim <paul.kim.dev@gmail.com>` (already set repo-locally). Conventional-commit prefixes: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`. No AI attribution trailers.
 - **Projects in scope (exactly five):** `papercup`, `SkiWatch`, `open-ski-data`, `project-beta`, `cli-p2p-boardgame`. Nothing else is presentable.
+
+---
+
+## Amendment A — the hub is a morph, not a ring (2026-08-04)
+
+Tasks 6, 7 and 13 as written below describe a rotating ring of five preview components. **That was a misreading of the brief** and is superseded. Paul: *"It was designed to morph an object to another object, as paulkim-xr/paulkim-space shows."*
+
+The hub is **one mesh**. Every vertex of the shape on screen flies to a vertex of the next project's shape. Browsing is a continuous body, not a carousel of separate ones.
+
+**What this replaces**
+
+| Removed | Replaced by |
+| --- | --- |
+| `src/hub/ring.ts` — ring math | nothing; there is no ring |
+| `src/hub/Carousel3D.tsx` | `src/hub/MorphHub.tsx` |
+| `src/hub/previews/*.tsx` — five R3F component trees | `src/shape/shapes/*.ts` — five `BufferGeometry` factories |
+| `Room.preview: ComponentType<{selected}>` | `Room.shape: () => BufferGeometry` + `Room.accent: string` |
+
+**What survives untouched:** the transition reducer, the room registry, the content schema, the exhibit template, camera framing, routing and deep links, and the deploy pipeline. Two of twelve source files were replaced.
+
+**Decisions taken during the rebuild**
+
+- **The void mask stays a separate mask** rather than being absorbed into `transformTo`. Paul's call, asked and answered.
+- **The exhibit shows the same geometry** the hub morphed into, standing still on the plinth. Continuity for free, and one less thing per project to design.
+- **Vertex buffer is derived, not chosen.** `bufferSizeFor(rooms)` returns the largest shape's deduplicated vertex count — currently 187. `WigglyGeometry` pads to this size every frame and never reallocates, so a hard-coded value either overruns (a throw mid-morph) or wastes float writes on a 72Hz budget. Deriving it means adding a project cannot silently break either way.
+- **Idle drift is capped by the finest feature, not by what looks lively.** `WIGGLE_DOF = 0.01`; at 0.022 the drift exceeded project-beta's route tube radius and shook it into a zigzag.
+- **Movements carry 6 waypoints, not `Movement`'s default 30.** `getCurrentPoint` scans the list linearly per vertex per frame; at a few hundred vertices that scan is the hub's whole per-frame cost.
+
+**Defects found and fixed during the rebuild** — all four were invisible to unit tests and surfaced only by driving a real browser:
+
+1. **Stale wireframe after every morph.** three caches one wireframe index per geometry and rebuilds it only when the index attribute's `version` *increases*. `WigglyGeometry` swaps in a whole new index attribute, which starts at version 0, so the wireframe kept drawing the shape before last — spanning edges between parts no longer connected, and no edges at all over parts that were. Fixed in `MorphHub` with a monotonic version bump on index identity change.
+2. **The hub drew on top of the room.** `Stage` used `showHub = phase !== 'inRoom'`, which stays true through `revealing` — the phase where the mask opens on a room the camera already points at. Invisible with a ring at radius 3 (off-camera); centre-frame with a morph. Now `showHub = !usesRoomFraming(state)`.
+3. **`Movement`'s `dof` option did nothing.** `maxDist` was assigned *after* the random-path loop that reads it, so every generated walk used the default 0.3 regardless of what the caller asked for. Fixed in the ported file.
+4. **`Movement.removeRange` skipped every other segment** — it walked indices forwards while splicing, so each removal shifted the rest down past the cursor. Now walks back to front.
+
+Items 3 and 4 are changes to ported prototype code, on top of the two from the original port (a dead `const count`, a stripped `console.log`). Worth syncing back to `paulkim-space`.
 
 ---
 
@@ -63,12 +99,17 @@ paulkim-xr.github.io/
     │   ├── App.tsx                   reads router state, owns <Canvas>, passes props down
     │   ├── Stage.tsx                 everything inside <Canvas>; pure props, no router hooks
     │   └── EnterXrButton.tsx         DOM overlay button, gated on XR support
-    ├── hub/
-    │   ├── ring.ts                   pure carousel ring math                    [tested]
-    │   ├── Carousel3D.tsx            the project ring
-    │   └── previews/                 one small R3F component per project
-    │       ├── PapercupPreview.tsx  SkiWatchPreview.tsx  OpenSkiDataPreview.tsx
-    │       └── ProjectBetaPreview.tsx  BoardgamePreview.tsx
+    ├── hub/                          (rebuilt — see Amendment A)
+    │   ├── MorphHub.tsx              the one mesh that morphs between projects
+    │   ├── budget.ts                 fixed vertex-buffer sizing                 [tested]
+    │   └── wiggle.ts                 idle per-vertex drift                      [tested]
+    ├── shape/
+    │   ├── merge.ts                  compose primitives into one geometry       [tested]
+    │   ├── ShapeSurface.tsx          how a shape is drawn: fill + wireframe
+    │   ├── useShape.ts               build once, dispose on unmount
+    │   └── shapes/                   one geometry factory per project           [tested]
+    │       ├── papercup.ts  skiwatch.ts  openSkiData.ts
+    │       └── projectBeta.ts  boardgame.ts
     ├── transition/
     │   ├── machine.ts                pure reducer + guards                      [tested]
     │   ├── useTransition.ts          React binding for the reducer
@@ -464,7 +505,9 @@ export function App() {
 - [ ] **Step 2: Confirm the readout locally**
 
 Run: `npm run dev`, open `http://localhost:5173`.
-Expected: `isSecureContext: true` (localhost is always a secure context) and `navigator.xr present: false` on a desktop browser with no headset runtime.
+Expected: `isSecureContext: true` (localhost is always a secure context).
+
+`navigator.xr present` was predicted here as `false` on a desktop browser with no headset runtime. **Measured 2026-08-04: it is `true`** — Chromium exposes the `navigator.xr` object regardless of whether any runtime is installed. Presence proves nothing; only `isSessionSupported('immersive-vr')` answers the question, which is why the readout below reports both.
 
 - [ ] **Step 3: Expose the dev server over the funnel**
 
@@ -2756,7 +2799,13 @@ The placeholders from Task 5 are legible but arbitrary. Each preview should say 
 
 **Budget:** each preview is mounted permanently in the carousel and again in its exhibit. Keep every one under **6 draw calls** and use no textures. Five previews therefore cost at most 30 of the 100-draw-call room budget.
 
-**On reusing the prototype pieces.** The spec lists `circles`, `gravity`, `roulette`, `spherical`, `Carousel3D` and `WigglyMesh` from `paulkim-space` as available source material. They are deliberately not ported here. The prototype's `Carousel3D` is a stub — seven unstyled spheres — with nothing to salvage, and the rest are untyped JavaScript written against R3F v8, so porting costs more than writing a five-primitive preview from scratch. They remain genuine candidates for **room furniture** in a bespoke scene, where their behaviour is the point; they are poor candidates for previews, where the requirement is to read instantly at thumbnail scale. Revisit them when writing the M3 plan.
+**On reusing the prototype pieces — CORRECTED 2026-08-04.**
+
+This paragraph originally read: *"The prototype's `Carousel3D` is a stub — seven unstyled spheres — with nothing to salvage, and the rest are untyped JavaScript written against R3F v8, so porting costs more than writing a five-primitive preview from scratch."*
+
+That was wrong, and wrong in the way that matters: it judged a directory by one file. `Carousel3D.tsx` **is** a stub, but `Movement.ts` and `WigglyGeometry.ts` next to it are TypeScript, pure three.js, and carry no R3F coupling at all. They are the prototype's actual carousel — a single mesh whose vertices fly from one project's shape to the next — and the "3D carousel" in the spec means *that*, not a ring of five objects taking turns.
+
+Both files port to three 0.184 under TS 6 strict with one dead variable removed and one `console.log` stripped. See **Amendment A** for the rebuild that follows from this.
 
 - [ ] **Step 1: papercup — two cups and a taut line**
 

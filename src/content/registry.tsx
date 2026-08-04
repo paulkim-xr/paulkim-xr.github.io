@@ -1,11 +1,12 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
+import type { BufferGeometry } from 'three'
 import { projects } from './projects'
 import type { Project } from './schema'
-import { PapercupPreview } from '../hub/previews/PapercupPreview'
-import { SkiWatchPreview } from '../hub/previews/SkiWatchPreview'
-import { OpenSkiDataPreview } from '../hub/previews/OpenSkiDataPreview'
-import { ProjectBetaPreview } from '../hub/previews/ProjectBetaPreview'
-import { BoardgamePreview } from '../hub/previews/BoardgamePreview'
+import { papercupShape } from '../shape/shapes/papercup'
+import { skiwatchShape } from '../shape/shapes/skiwatch'
+import { openSkiDataShape } from '../shape/shapes/openSkiData'
+import { projectBetaShape } from '../shape/shapes/projectBeta'
+import { boardgameShape } from '../shape/shapes/boardgame'
 
 export type RoomScene = ComponentType<{ room: Room }>
 
@@ -15,8 +16,14 @@ export type LazyScene = LazyExoticComponent<RoomScene> & {
 }
 
 export type Room = Project & {
-  /** Mounted by the carousel. Always resident, so keep it cheap. */
-  preview: ComponentType<{ selected: boolean }>
+  /**
+   * The single mesh the hub morphs into for this project, and the same object
+   * that stands on the plinth once you are inside. A factory, not a shared
+   * instance: the hub rewrites vertex positions in place.
+   */
+  shape: () => BufferGeometry
+  /** Line colour for the shape, in the hub and the room alike. */
+  accent: string
   /** Mounted behind the void mask. Code-split — absent from the initial bundle. */
   scene: LazyScene
 }
@@ -33,18 +40,18 @@ function lazyScene(factory: () => Promise<{ default: RoomScene }>): LazyScene {
  */
 const exhibitScene = () => lazyScene(() => import('../exhibit/Exhibit'))
 
-const bindings: Record<string, Pick<Room, 'preview' | 'scene'>> = {
-  papercup: { preview: PapercupPreview, scene: exhibitScene() },
-  skiwatch: { preview: SkiWatchPreview, scene: exhibitScene() },
-  'open-ski-data': { preview: OpenSkiDataPreview, scene: exhibitScene() },
-  'project-beta': { preview: ProjectBetaPreview, scene: exhibitScene() },
-  'cli-p2p-boardgame': { preview: BoardgamePreview, scene: exhibitScene() },
+const bindings: Record<string, Pick<Room, 'shape' | 'accent' | 'scene'>> = {
+  papercup: { shape: papercupShape, accent: '#9aa4b2', scene: exhibitScene() },
+  skiwatch: { shape: skiwatchShape, accent: '#7fb8ff', scene: exhibitScene() },
+  'open-ski-data': { shape: openSkiDataShape, accent: '#8ce0c0', scene: exhibitScene() },
+  'project-beta': { shape: projectBetaShape, accent: '#ffb27f', scene: exhibitScene() },
+  'cli-p2p-boardgame': { shape: boardgameShape, accent: '#c79aff', scene: exhibitScene() },
 }
 
 export const rooms: Room[] = projects.map((project) => {
   const binding = bindings[project.id]
   if (!binding) {
-    throw new Error(`No preview/scene binding registered for project "${project.id}"`)
+    throw new Error(`No shape/scene binding registered for project "${project.id}"`)
   }
   return { ...project, ...binding }
 })
