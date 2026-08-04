@@ -32,19 +32,33 @@ export function LabPage({
   title,
   caption,
   camera,
+  flat = false,
+  zoom,
   children,
 }: {
   title: string
   caption: string
   camera: [number, number, number]
+  /**
+   * True for a piece that is 2D by nature.
+   *
+   * Orthographic and fixed: a perspective camera you can orbit turns a flat
+   * composition into an object seen at an angle, which is a different piece.
+   */
+  flat?: boolean
+  zoom?: number
   children: ReactNode
 }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#07070b' }}>
-      <Canvas camera={{ position: camera, fov: 50 }} data-testid="lab-canvas">
+      <Canvas
+        orthographic={flat}
+        camera={flat ? { position: camera, zoom, near: -100, far: 100 } : { position: camera, fov: 50 }}
+        data-testid="lab-canvas"
+      >
         <color attach="background" args={['#07070b']} />
         <Suspense fallback={null}>{children}</Suspense>
-        <OrbitControls enablePan={false} enableDamping dampingFactor={0.08} />
+        {!flat && <OrbitControls enablePan={false} enableDamping dampingFactor={0.08} />}
       </Canvas>
 
       <Link to="/" style={LINK_STYLE}>

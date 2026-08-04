@@ -42,9 +42,20 @@ describe('the real project data', () => {
     expect(() => parseProjects(projects)).not.toThrow()
   })
 
-  test('contains exactly the five in-scope projects', () => {
+  test('contains the five in-scope projects and the two lab pieces', () => {
+    // Was five exactly. The lab pieces now sit on the same footing, by
+    // decision: they are what "living XR lab" means and they earn a place in
+    // the hub rather than a side door.
     expect(projects.map((p) => p.id).sort()).toEqual(
-      ['cli-p2p-boardgame', 'open-ski-data', 'papercup', 'project-beta', 'skiwatch'].sort(),
+      [
+        'circles',
+        'cli-p2p-boardgame',
+        'gravity',
+        'open-ski-data',
+        'papercup',
+        'project-beta',
+        'skiwatch',
+      ].sort(),
     )
   })
 

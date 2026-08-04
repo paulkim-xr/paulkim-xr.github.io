@@ -62,7 +62,7 @@ test.describe('the hub', () => {
     await page.keyboard.press('ArrowLeft')
     await expect(page.locator('html')).toHaveAttribute(
       'data-project',
-      'cli-p2p-boardgame',
+      'gravity',
       SETTLE,
     )
   })

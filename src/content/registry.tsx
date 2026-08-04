@@ -7,6 +7,8 @@ import { skiwatchShape } from '../shape/shapes/skiwatch'
 import { openSkiDataShape } from '../shape/shapes/openSkiData'
 import { projectBetaShape } from '../shape/shapes/projectBeta'
 import { boardgameShape } from '../shape/shapes/boardgame'
+import { circlesShape } from '../shape/shapes/circles'
+import { gravityShape } from '../shape/shapes/gravity'
 
 export type RoomScene = ComponentType<{ room: Room }>
 
@@ -46,6 +48,11 @@ const bindings: Record<string, Pick<Room, 'shape' | 'accent' | 'scene'>> = {
   'open-ski-data': { shape: openSkiDataShape, accent: '#8ce0c0', scene: exhibitScene() },
   'project-beta': { shape: projectBetaShape, accent: '#ffb27f', scene: exhibitScene() },
   'cli-p2p-boardgame': { shape: boardgameShape, accent: '#c79aff', scene: exhibitScene() },
+  // The lab pieces, presented on the same footing as the projects. Their
+  // rooms are the standard exhibit; the piece itself lives at its own route,
+  // linked from the panel, because neither belongs inside the hub's canvas.
+  circles: { shape: circlesShape, accent: '#ff5fd2', scene: exhibitScene() },
+  gravity: { shape: gravityShape, accent: '#7fd4ff', scene: exhibitScene() },
 }
 
 export const rooms: Room[] = projects.map((project) => {

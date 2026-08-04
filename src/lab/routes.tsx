@@ -6,8 +6,10 @@ export function CirclesPage() {
   return (
     <LabPage
       title="Circles"
-      caption="Every ring is as wide as its distance to the nearest of three Bézier curves, and as coloured as how near it is to each. Drag to look around."
-      camera={[0, 0, 21]}
+      caption="A flat piece: every ring is as wide as its distance to the nearest of three Bézier curves, and as coloured as how near it is to each."
+      camera={[0, 0, 10]}
+      flat
+      zoom={44}
     >
       <CirclesScene />
     </LabPage>

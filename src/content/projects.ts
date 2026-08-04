@@ -47,4 +47,24 @@ export const projects: Project[] = [
       'Eleven board games played peer-to-peer entirely in the terminal. UDP beacons find opponents on the LAN with zero configuration, and three clients — Python, Node and Bun — share one wire protocol.',
     links: [{ label: 'Repo', href: 'https://github.com/paulkim-xr/cli-p2p-boardgame' }],
   },
+  {
+    id: 'circles',
+    title: 'Circles',
+    blurb:
+      'A flat study in distance fields. A grid of rings, each as wide as its distance to the nearest of three Bézier curves and coloured by how near it is to each of them.',
+    links: [
+      { label: 'Open', href: 'https://paulkim-xr.github.io/lab/circles' },
+      { label: 'Source', href: 'https://github.com/paulkim-xr/paulkim-space' },
+    ],
+  },
+  {
+    id: 'gravity',
+    title: 'Gravity',
+    blurb:
+      'Nine bodies pulling on each other by an inverse square law inside a sealed box. It collapses into a heap, then throws itself apart again along a new axis every time.',
+    links: [
+      { label: 'Open', href: 'https://paulkim-xr.github.io/lab/gravity' },
+      { label: 'Source', href: 'https://github.com/paulkim-xr/paulkim-space' },
+    ],
+  },
 ]
