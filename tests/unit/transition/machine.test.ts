@@ -4,6 +4,7 @@ import {
   isLocked,
   reduce,
   shouldMountScene,
+  usesRoomFraming,
   type TransitionEvent,
   type TransitionState,
 } from '../../../src/transition/machine'
@@ -169,6 +170,39 @@ describe('leaving a room', () => {
     )
     expect(state.phase).toBe('browsing')
     expect(state.target).toBeNull()
+  })
+})
+
+describe('usesRoomFraming', () => {
+  const entering = (phase: TransitionState['phase']): TransitionState => ({
+    ...initialState,
+    phase,
+    target: 'papercup',
+    direction: 'in',
+  })
+
+  test('keeps hub framing until the mask has closed', () => {
+    expect(usesRoomFraming(entering('browsing'))).toBe(false)
+    expect(usesRoomFraming(entering('focusing'))).toBe(false)
+    expect(usesRoomFraming(entering('masking'))).toBe(false)
+  })
+
+  test('switches to room framing while fully masked, so the cut is unseen', () => {
+    expect(usesRoomFraming(entering('swapping'))).toBe(true)
+    expect(usesRoomFraming(entering('revealing'))).toBe(true)
+    expect(usesRoomFraming(entering('inRoom'))).toBe(true)
+  })
+
+  test('holds room framing until the outward mask has finished closing', () => {
+    const leaving = (phase: TransitionState['phase']): TransitionState => ({
+      ...initialState,
+      phase,
+      target: 'papercup',
+      direction: 'out',
+    })
+    expect(usesRoomFraming(leaving('masking'))).toBe(true)
+    expect(usesRoomFraming(leaving('swapping'))).toBe(false)
+    expect(usesRoomFraming(leaving('revealing'))).toBe(false)
   })
 })
 

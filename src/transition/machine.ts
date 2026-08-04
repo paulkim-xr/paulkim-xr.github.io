@@ -56,6 +56,20 @@ export function shouldMountScene(state: TransitionState): boolean {
   return true
 }
 
+/**
+ * Whether the camera should use room framing rather than hub framing.
+ *
+ * The hub is a ring of radius 3 viewed from outside; a room is a plinth and a
+ * panel a couple of metres away. One camera position cannot serve both. The
+ * swap is free precisely because it happens while the void is fully closed —
+ * entering, that is `swapping` onward; leaving, room framing is held until the
+ * outward mask has finished closing.
+ */
+export function usesRoomFraming(state: TransitionState): boolean {
+  if (state.direction === 'out') return state.phase === 'masking'
+  return state.phase === 'swapping' || state.phase === 'revealing' || state.phase === 'inRoom'
+}
+
 /** Both gates open — the mask may lift. */
 function readyToReveal(state: TransitionState): boolean {
   // Leaving a room reveals the hub, which is eager and always resident.

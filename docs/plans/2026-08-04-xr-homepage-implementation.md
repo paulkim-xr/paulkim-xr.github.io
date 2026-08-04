@@ -2687,6 +2687,33 @@ export default function Exhibit({ room }: { room: Room }) {
 }
 ```
 
+- [ ] **Step 3b: Camera framing (added during execution)**
+
+The plan originally left the camera fixed at the hub position for both the hub
+and every room. It does not work: the hub camera sits back far enough to see a
+ring of radius 3, which puts a room's panel ~9 units away and its text
+illegible. One camera position cannot serve both.
+
+The framing swap is free because it happens while the void is fully closed.
+`usesRoomFraming` in `src/transition/machine.ts` decides when, and is tested
+alongside the rest of the reducer:
+
+```ts
+export function usesRoomFraming(state: TransitionState): boolean {
+  if (state.direction === 'out') return state.phase === 'masking'
+  return state.phase === 'swapping' || state.phase === 'revealing' || state.phase === 'inRoom'
+}
+```
+
+Entering, framing switches at `swapping` — the first phase where the mask is
+fully closed. Leaving, room framing is *held* through `masking` and released at
+`swapping`, so again the cut lands behind a closed mask. `CameraRig` in
+`Stage.tsx` applies it, and is disabled in XR where the headset owns the camera.
+
+Room layout follows from the framing: object low and forward at
+`[0, -1.3, -1.4]`, panel high and behind at `[0, 1.35, -3.4]`, so neither
+occludes the other from the room camera or while orbiting.
+
 - [ ] **Step 4: Verify by hand**
 
 Run: `npm run dev`, enter each of the five projects in turn.
