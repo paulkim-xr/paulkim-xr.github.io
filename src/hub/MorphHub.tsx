@@ -1,9 +1,8 @@
-import { Text } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import type { Group, MeshBasicMaterial } from 'three'
 import type { Room } from '../content/registry'
-import { DISPLAY_FONT } from '../lib/font'
+import { CanvasText } from '../lib/CanvasText'
 import { WigglyGeometry } from '../lib/morph/WigglyGeometry'
 import { browseHint, coarsePointer } from '../lib/pointer'
 import { EDGE_OPACITY, FILL_OPACITY, ShapeSurface } from '../shape/ShapeSurface'
@@ -331,25 +330,13 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
       </group>
 
       {/* Outside the spinning group: a label that turns away is no label. */}
-      <Text
-        font={DISPLAY_FONT}
-        position={[0, -1.25, 0]}
-        fontSize={0.2}
-        anchorX="center"
-        color="#ffffff"
-      >
+      <CanvasText position={[0, -1.25, 0]} fontSize={0.2} anchorX="center" color="#ffffff">
         {room.title}
-      </Text>
+      </CanvasText>
 
-      <Text
-        font={DISPLAY_FONT}
-        position={[0, -1.52, 0]}
-        fontSize={0.075}
-        anchorX="center"
-        color="#6f7787"
-      >
+      <CanvasText position={[0, -1.52, 0]} fontSize={0.075} anchorX="center" color="#6f7787">
         {browseHint(touch)}
-      </Text>
+      </CanvasText>
     </group>
   )
 }

@@ -1,9 +1,8 @@
-import { Text } from '@react-three/drei'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { createXRStore, XR } from '@react-three/xr'
 import { useCallback, useRef, useState } from 'react'
 import type { Mesh } from 'three'
-import { DISPLAY_FONT } from '../lib/font'
+import { CanvasText } from '../lib/CanvasText'
 
 const store = createXRStore()
 
@@ -72,15 +71,14 @@ export function MicSpike() {
         <XR store={store}>
           <color attach="background" args={['#101014']} />
           <ambientLight intensity={1} />
-          <Text
-            font={DISPLAY_FONT}
+          <CanvasText
             position={[0, 1.7, -2]}
             fontSize={0.09}
             maxWidth={3}
             textAlign="center"
           >
             {status}
-          </Text>
+          </CanvasText>
           <LevelBar analyser={analyser} />
           {/* Selectable from inside the session with a controller — the case
               that might behave differently from a DOM button press. */}
@@ -88,9 +86,9 @@ export function MicSpike() {
             <boxGeometry args={[0.4, 0.2, 0.05]} />
             <meshBasicMaterial color="#ff5577" />
           </mesh>
-          <Text font={DISPLAY_FONT} position={[0.8, 1.2, -1.94]} fontSize={0.05}>
+          <CanvasText position={[0.8, 1.2, -1.94]} fontSize={0.05}>
             mic
-          </Text>
+          </CanvasText>
         </XR>
       </Canvas>
     </>

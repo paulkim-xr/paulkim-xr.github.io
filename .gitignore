@@ -14,3 +14,5 @@ playwright-report/
 .phone.mjs
 .swipe.mjs
 .probe.mjs
+.s25.mjs
+.font.mjs
