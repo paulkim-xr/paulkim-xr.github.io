@@ -9,3 +9,4 @@ playwright-report/
 .shot.mjs
 .nvmrc.local
 .walk.mjs
+.shim.mjs
