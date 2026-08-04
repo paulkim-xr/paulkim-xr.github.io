@@ -110,7 +110,14 @@ tests/
 - Consumes: nothing.
 - Produces: `damp(current: number, target: number, lambda: number, dt: number): number` from `src/lib/damp.ts`. Every animated value in later tasks uses this rather than a fixed per-frame lerp.
 
-- [ ] **Step 1: Initialise the package and install dependencies**
+- [x] **Step 1: Initialise the package and install dependencies**
+
+**Node 22.22.3 or newer is required.** `react-router` v8 declares `engines.node >= 22.22.0`, and the VM defaults to Node 20. An `.nvmrc` pins it:
+
+```bash
+echo "22.22.3" > .nvmrc
+nvm use   # or: export PATH=$HOME/.nvm/versions/node/v22.22.3/bin:$PATH
+```
 
 Run from the repo root (`/home/papercup/workspaces/paulkim-xr.github.io`):
 
@@ -125,15 +132,18 @@ npm install react@^19.2.6 react-dom@^19.2.6 three@^0.184.0 \
 
 npm install -D vite@^8.0.14 @vitejs/plugin-react@^6.0.2 typescript@^6.0.3 \
   @types/react@^19.2.15 @types/react-dom@^19.2.3 @types/three@^0.184.1 \
+  @types/node@latest \
   vitest@latest @vitest/coverage-v8@latest jsdom@latest @playwright/test@latest
 ```
 
 Two compatibility constraints that `@latest` must satisfy — check them after install:
 
 - `@react-three/drei` must resolve to the **v10 line or newer**. Drei v9 targets R3F v8 and will fail against R3F 9 / React 19.
-- `react-router` v7 exports `BrowserRouter`, `Routes`, `Route`, `useParams`, `useNavigate` from the **`react-router`** package directly. Do **not** install `react-router-dom`.
+- `react-router` exports `BrowserRouter`, `Routes`, `Route`, `useParams`, `useNavigate` from the **`react-router`** package directly. Do **not** install `react-router-dom`.
 
 Verify: `npm ls @react-three/drei react-router` and confirm drei is `10.x` or higher.
+
+**Versions this was executed against (2026-08-04):** react 19.2.8, react-dom 19.2.8, three 0.184.0, @react-three/fiber 9.7.0, @react-three/drei 10.7.7, @react-three/xr 6.6.30, react-router 8.3.0, zod 4.4.3, vite 8.2.0, typescript 6.0.3, vitest 4.1.10, @playwright/test 1.62.1.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -205,8 +215,9 @@ Expected: PASS, 4 tests.
 `vite.config.ts`:
 
 ```ts
-/// <reference types="vitest" />
-import { defineConfig } from 'vite'
+// Vitest 4 no longer augments Vite's UserConfig via a triple-slash reference;
+// the `test` key is only typed on vitest/config's defineConfig.
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
@@ -234,7 +245,7 @@ export default defineConfig({
 })
 ```
 
-`tsconfig.json`:
+`tsconfig.json` — a **single** config, with no project references. TypeScript 6 rejects the conventional Vite two-file split (`composite: true` together with `noEmit: true` is TS6310), and one config that covers source, tests and the build configs is simpler than working around it:
 
 ```json
 {
@@ -251,28 +262,14 @@ export default defineConfig({
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
-    "types": ["vite/client"]
-  },
-  "include": ["src", "tests"],
-  "references": [{ "path": "./tsconfig.node.json" }]
-}
-```
-
-`tsconfig.node.json`:
-
-```json
-{
-  "compilerOptions": {
-    "composite": true,
-    "module": "ESNext",
-    "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
-    "strict": true,
-    "noEmit": true
+    "types": ["vite/client", "node"]
   },
-  "include": ["vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]
 }
 ```
+
+`"node"` in `types` is not optional: Vite 8's own `.d.ts` references `Buffer`, so without `@types/node` the build fails with ~20 `TS2591` errors pointing into `node_modules`.
 
 `.gitignore`:
 
@@ -290,7 +287,7 @@ Add scripts:
 
 ```bash
 npm pkg set scripts.dev="vite" \
-  scripts.build="tsc -b && vite build" \
+  scripts.build="tsc --noEmit && vite build" \
   scripts.preview="vite preview --port 4173" \
   scripts.test="vitest run" \
   scripts.test:watch="vitest" \
@@ -378,7 +375,7 @@ export function App() {
 - [ ] **Step 8: Verify the build and dev server**
 
 Run: `npm run build`
-Expected: `tsc -b` passes with no errors, and Vite writes `dist/`.
+Expected: `tsc --noEmit` passes with no errors, and Vite writes `dist/`. The ~1.1 MB bundle warning is three.js and is expected — the code splitting in this plan is per-room, not per-library.
 
 Run: `npm run dev`, open `http://localhost:5173`, confirm a shaded torus knot renders. Stop the server.
 
