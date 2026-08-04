@@ -9,6 +9,7 @@ import {
   type InstancedMesh,
   type PointLight,
 } from 'three'
+import { FitPerspective } from '../Fit'
 import { step, type Body, type NBodyOptions } from './nbody'
 import {
   idleWatch,
@@ -165,6 +166,10 @@ export function GravityScene() {
 
   return (
     <group>
+      {/* The box is the subject and it is a cube, so on a portrait window its
+          left and right walls are the first things over the edge. */}
+      <FitPerspective radius={BOUNDS * Math.SQRT2} />
+
       <ambientLight intensity={0.35} />
       <pointLight ref={light} position={[0, 0, 0]} intensity={LIGHT_INTENSITY} distance={BOUNDS * 3} />
 

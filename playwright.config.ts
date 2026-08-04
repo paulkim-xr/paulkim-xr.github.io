@@ -23,7 +23,21 @@ export default defineConfig({
     },
   },
 
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: /mobile\.spec\.ts/,
+    },
+    {
+      // The touch behaviours only mean anything on a touch device in portrait,
+      // and running the whole suite twice to reach them would double a run
+      // that is already software-rasterised.
+      name: 'phone',
+      use: { ...devices['Pixel 5'] },
+      testMatch: /mobile\.spec\.ts/,
+    },
+  ],
 
   webServer: {
     // Tests run against the built bundle, not the dev server — this is the

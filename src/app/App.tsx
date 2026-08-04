@@ -98,11 +98,41 @@ export function App() {
 
   return (
     <>
+      {state.phase === 'inRoom' && <ExitButton onExit={exit} />}
       <LabNav />
       <Canvas camera={{ position: [0, 0.15, 3.3], fov: 50 }} data-testid="scene">
         <Stage activeIndex={activeIndex} transition={transition} onStep={step} xrMode={false} />
       </Canvas>
     </>
+  )
+}
+
+const EXIT_STYLE: React.CSSProperties = {
+  position: 'fixed',
+  left: '0.75rem',
+  top: '0.6rem',
+  // Comfortably past the 44px minimum touch target, which the bare text is not.
+  padding: '0.75rem 1rem',
+  background: 'none',
+  border: 'none',
+  color: '#c7cddb',
+  font: '400 0.85rem/1 system-ui, sans-serif',
+  cursor: 'pointer',
+  zIndex: 1,
+}
+
+/**
+ * The way out of a room.
+ *
+ * Leaving was bound to Escape and nothing else, which is no exit at all on a
+ * phone: there is no key to press, and the room fills the screen, so the only
+ * way back to the hub was the browser's own back button.
+ */
+function ExitButton({ onExit }: { onExit: () => void }) {
+  return (
+    <button type="button" onClick={onExit} style={EXIT_STYLE} data-testid="exit-room">
+      ← back
+    </button>
   )
 }
 

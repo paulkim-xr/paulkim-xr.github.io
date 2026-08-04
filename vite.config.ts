@@ -22,7 +22,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: [
-        'src/lib/**',
+        // Modules only. The R3F components alongside them need a renderer and
+        // are covered by the end-to-end suite instead.
+        'src/lib/**/*.ts',
         'src/transition/machine.ts',
         'src/content/**',
         'src/shape/merge.ts',

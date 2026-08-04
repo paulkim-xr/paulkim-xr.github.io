@@ -11,3 +11,6 @@ playwright-report/
 .walk.mjs
 .shim.mjs
 .morph.mjs
+.phone.mjs
+.swipe.mjs
+.probe.mjs
