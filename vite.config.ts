@@ -32,6 +32,7 @@ export default defineConfig({
         'src/hub/wiggle.ts',
         'src/lab/circles/field.ts',
         'src/lab/gravity/nbody.ts',
+        'src/lab/gravity/scatter.ts',
         'src/xr/useXrSupport.ts',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },

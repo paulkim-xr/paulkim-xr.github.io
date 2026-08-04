@@ -18,7 +18,7 @@ export function GravityPage() {
   return (
     <LabPage
       title="Gravity"
-      caption="Nine bodies pulling on each other by an inverse square law, sealed in a box. Drag to look around."
+      caption="Nine bodies pulling on each other by an inverse square law, sealed in a box. It collapses, and blows itself apart again. Drag to look around, click a sphere to kick it."
       camera={[0, 1.6, 13]}
     >
       <GravityScene />

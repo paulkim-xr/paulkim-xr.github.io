@@ -1,7 +1,22 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import { BoxGeometry, Color, EdgesGeometry, Object3D, Vector3, type InstancedMesh } from 'three'
+import {
+  BoxGeometry,
+  Color,
+  EdgesGeometry,
+  Object3D,
+  Vector3,
+  type InstancedMesh,
+  type PointLight,
+} from 'three'
 import { step, type Body, type NBodyOptions } from './nbody'
+import {
+  idleWatch,
+  scatter,
+  watchClutter,
+  type ClutterWatch,
+  type ScatterOptions,
+} from './scatter'
 
 const BOUNDS = 3.4
 const COUNT = 9
@@ -9,9 +24,28 @@ const COUNT = 9
 const OPTIONS: NBodyOptions = {
   strength: 5.5,
   bounds: BOUNDS,
-  restitution: 0.86,
+  restitution: 0.93,
   softening: 0.45,
 }
+
+/**
+ * When to break the cloud up, and how hard.
+ *
+ * Restitution below 1 means the box takes energy out on every bounce, so the
+ * end state of this simulation is always the same: nine spheres in a heap in
+ * the middle, going nowhere. Left alone it is a screensaver that finishes.
+ */
+const SCATTER: ScatterOptions = {
+  clumped: 1.15,
+  patience: 1.8,
+  strength: 5.4,
+  swirl: 0.45,
+  recentre: 0.55,
+}
+
+/** Seconds the burst flare takes to fade. */
+const FLARE_SECONDS = 0.9
+const LIGHT_INTENSITY = 12
 
 /** Faces of the box, in the original's six colours. */
 const WALLS: { colour: string; position: [number, number, number]; rotation: [number, number, number] }[] = [
@@ -76,6 +110,20 @@ export function GravityScene() {
   )
   useEffect(() => () => boxEdges.dispose(), [boxEdges])
 
+  const watch = useRef<ClutterWatch>(idleWatch)
+  const flare = useRef(0)
+  const light = useRef<PointLight>(null)
+
+  /** Kicks one body, the way clicking a sphere did in the original. */
+  const kick = (index: number | undefined) => {
+    if (index === undefined) return
+    const body = bodies[index]
+    const away = body.position.clone()
+    if (away.lengthSq() === 0) away.set(0, 1, 0)
+    body.velocity.addScaledVector(away.normalize(), SCATTER.strength)
+    flare.current = FLARE_SECONDS * 0.5
+  }
+
   const colours = useMemo(
     () => bodies.map((_, index) => new Color().setHSL((index / bodies.length) * 0.7, 0.6, 0.6)),
     [bodies],
@@ -83,6 +131,24 @@ export function GravityScene() {
 
   useFrame((_state, delta) => {
     step(bodies, delta, OPTIONS)
+
+    // Left to itself the cloud collapses and stays collapsed. Watch for that
+    // and throw it apart again, along a different axis every time.
+    const seen = watchClutter(watch.current, bodies, delta, SCATTER)
+    watch.current = seen.watch
+    if (seen.burst) {
+      scatter(bodies, SCATTER, seen.watch.bursts)
+      flare.current = FLARE_SECONDS
+    }
+
+    if (flare.current > 0) flare.current = Math.max(0, flare.current - delta)
+    if (light.current) {
+      // The burst is over in a second; without a visible cause the spheres
+      // just appear to be shoved by nothing.
+      const surge = (flare.current / FLARE_SECONDS) ** 2
+      light.current.intensity = LIGHT_INTENSITY * (1 + surge * 5)
+    }
+
     if (!mesh.current) return
 
     bodies.forEach((body, index) => {
@@ -100,10 +166,24 @@ export function GravityScene() {
   return (
     <group>
       <ambientLight intensity={0.35} />
-      <pointLight position={[0, 0, 0]} intensity={12} distance={BOUNDS * 3} />
+      <pointLight ref={light} position={[0, 0, 0]} intensity={LIGHT_INTENSITY} distance={BOUNDS * 3} />
 
       {/* One draw call for every body. */}
-      <instancedMesh ref={mesh} args={[undefined, undefined, COUNT]} frustumCulled={false}>
+      <instancedMesh
+        ref={mesh}
+        args={[undefined, undefined, COUNT]}
+        frustumCulled={false}
+        onClick={(event) => {
+          event.stopPropagation()
+          kick(event.instanceId)
+        }}
+        onPointerOver={() => {
+          document.body.style.cursor = 'pointer'
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = 'auto'
+        }}
+      >
         <sphereGeometry args={[1, 16, 12]} />
         <meshStandardMaterial roughness={0.35} metalness={0.1} />
       </instancedMesh>
