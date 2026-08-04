@@ -1,13 +1,14 @@
 import { Text } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import { Color, type BufferAttribute, type Group, type MeshBasicMaterial } from 'three'
+import type { Group, MeshBasicMaterial } from 'three'
 import type { Room } from '../content/registry'
 import { DISPLAY_FONT } from '../lib/font'
 import { WigglyGeometry } from '../lib/morph/WigglyGeometry'
 import { EDGE_OPACITY, FILL_OPACITY, ShapeSurface } from '../shape/ShapeSurface'
 import { bufferSizeFor } from './budget'
 import { morphFade, type MorphTiming } from './fade'
+import { bindTopology, createTopology, releaseTopology } from './topology'
 import { wiggleMoves } from './wiggle'
 
 /** Seconds a vertex spends in flight between one project's shape and the next. */
@@ -26,6 +27,9 @@ const TIMING: MorphTiming = { lead: 0.3, flight: MORPH_SECONDS, restore: 0.55 }
  * entirely reads as a glitch rather than a transformation.
  */
 const EDGE_FLOOR = 0.3
+
+/** Below this, a layer is a draw call rendering nothing. */
+const INVISIBLE = 0.002
 
 const IDLE_SPIN = 0.22
 const SHAPE_SCALE = 1.15
@@ -84,12 +88,33 @@ function usePointerStep(onStep: (delta: number) => void, enabled: boolean) {
   }, [onStep, enabled])
 }
 
+/** Opacity for one layer of the cross-fade, dissolve and weight combined. */
+function applyLayer(
+  fill: MeshBasicMaterial | null,
+  edge: MeshBasicMaterial | null,
+  presence: number,
+  weight: number,
+) {
+  if (fill) {
+    fill.opacity = FILL_OPACITY * presence * weight
+    fill.visible = fill.opacity > INVISIBLE
+  }
+  if (edge) {
+    edge.opacity = (EDGE_FLOOR + (EDGE_OPACITY - EDGE_FLOOR) * presence) * weight
+    edge.visible = edge.opacity > INVISIBLE
+  }
+}
+
 /**
  * The hub: one object that morphs from each project's shape into the next.
  *
  * Not a ring of five objects taking turns. Every vertex of the shape you are
  * looking at flies to a vertex of the shape you asked for, so browsing is a
  * single continuous body rather than a carousel of separate ones.
+ *
+ * The vertices come from one WigglyGeometry, which is never drawn directly.
+ * What gets drawn is two topologies over its position buffer — the shape being
+ * left and the shape being flown to — cross-fading across the flight.
  */
 export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: MorphHubProps) {
   const clock = useThree((state) => state.clock)
@@ -115,7 +140,17 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
     return wiggly
   }, [rooms, openingIndex, bufferSize, clock])
 
-  useEffect(() => () => geometry.dispose(), [geometry])
+  const outgoing = useMemo(createTopology, [])
+  const incoming = useMemo(createTopology, [])
+
+  useEffect(
+    () => () => {
+      releaseTopology(outgoing)
+      releaseTopology(incoming)
+      geometry.dispose()
+    },
+    [geometry, outgoing, incoming],
+  )
 
   /**
    * A step requested but not yet started, held through the dissolve.
@@ -129,81 +164,88 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
   const pending = useRef<number | null>(null)
   /** When the current envelope began. Null until the first frame. */
   const steppedAt = useRef<number | null>(null)
+  /** Whether `outgoing` has been pointed at the shape now leaving. */
+  const outgoingBound = useRef(false)
 
   const shown = useRef(openingIndex)
   useEffect(() => {
     if (shown.current === activeIndex) return
     shown.current = activeIndex
     pending.current = activeIndex
+    outgoingBound.current = false
     steppedAt.current = clock.getElapsedTime()
   }, [activeIndex, clock])
 
   usePointerStep(onStep, !dimmed)
 
-  // See the frame loop: three caches one wireframe index per geometry and
-  // only rebuilds it when the index attribute's version *increases*.
-  const drawnIndex = useRef<BufferAttribute | null>(null)
-  const indexVersion = useRef(0)
+  const outgoingFill = useRef<MeshBasicMaterial>(null)
+  const outgoingEdge = useRef<MeshBasicMaterial>(null)
+  const incomingFill = useRef<MeshBasicMaterial>(null)
+  const incomingEdge = useRef<MeshBasicMaterial>(null)
 
-  const fillMaterial = useRef<MeshBasicMaterial>(null)
-  const edgeMaterial = useRef<MeshBasicMaterial>(null)
-  /** The accent being faded away from. Colour cannot snap mid-flight. */
-  const leavingAccent = useRef(room.accent)
-  // Reused every frame; allocating two Colors per frame is pure garbage.
-  const scratch = useMemo(() => ({ blended: new Color(), arriving: new Color() }), [])
+  /** Monotonic across both topologies — see bindTopology. */
+  const topologyVersion = useRef(0)
+  /** False until the first morph, when there is nothing to fade out of. */
+  const hasMorphed = useRef(false)
+  /** The accent of the shape on screen, which `room` has already moved past. */
+  const shownAccent = useRef(room.accent)
+  const started = useRef(false)
 
   useFrame((state, delta) => {
     const now = state.clock.getElapsedTime()
+    const position = geometry.attributes.position
 
     // First frame: the opening bloom is already vertices in flight, so the
     // envelope joins at the end of the lead rather than dissolving a shape
     // that has not appeared yet.
-    if (steppedAt.current === null) steppedAt.current = now - TIMING.lead
+    if (!started.current) {
+      started.current = true
+      steppedAt.current = now - TIMING.lead
+      bindTopology(incoming, position, geometry.parameters.index, ++topologyVersion.current)
+      incomingFill.current?.color.set(room.accent)
+      incomingEdge.current?.color.set(room.accent)
+    }
 
-    const elapsed = now - steppedAt.current
+    const elapsed = now - (steppedAt.current ?? now)
+
+    // Capture what is on screen before anything moves. This has to happen at
+    // the start of the lead rather than at transformTo: for those 0.3s the
+    // outgoing layer is the only one visible, and it would otherwise still be
+    // pointed at the shape from the morph before last.
+    if (pending.current !== null && !outgoingBound.current) {
+      outgoingBound.current = true
+      hasMorphed.current = true
+      bindTopology(outgoing, position, geometry.index, ++topologyVersion.current)
+      outgoingFill.current?.color.set(shownAccent.current)
+      outgoingEdge.current?.color.set(shownAccent.current)
+    }
 
     // The dissolve has to finish before the vertices move, so the morph is
     // started here rather than in the effect that recorded the step.
     if (pending.current !== null && elapsed >= TIMING.lead) {
       const target = rooms[pending.current]
       pending.current = null
+
       geometry.transformTo(target.shape(), now, false)
       // After transformTo, `vertices` is the destination — so these idle
       // movements are anchored to where the shape is going, not where it was.
       geometry.setMoves(wiggleMoves(geometry))
+
+      bindTopology(incoming, position, geometry.parameters.index, ++topologyVersion.current)
+      incomingFill.current?.color.set(target.accent)
+      incomingEdge.current?.color.set(target.accent)
+      shownAccent.current = target.accent
     }
 
     geometry.updateVertices(now)
 
-    // WigglyGeometry swaps its index attribute wholesale — once when a morph
-    // starts and once when it settles — and a swapped-in attribute starts at
-    // version 0. Left alone, the wireframe keeps drawing the shape before
-    // last: edges spanning parts that are no longer connected, and none at
-    // all over parts that are. The bump has to be monotonic, because the
-    // cache compares against whatever version it last built at.
-    if (geometry.index && geometry.index !== drawnIndex.current) {
-      drawnIndex.current = geometry.index
-      geometry.index.version = ++indexVersion.current
-    }
-
     const { presence, blend } = morphFade(elapsed, TIMING)
 
-    scratch.blended.set(leavingAccent.current).lerp(scratch.arriving.set(room.accent), blend)
-    if (blend >= 1) leavingAccent.current = room.accent
-
-    const fill = fillMaterial.current
-    if (fill) {
-      fill.opacity = FILL_OPACITY * presence
-      // A fully dissolved fill is a draw call rendering nothing.
-      fill.visible = presence > 0.01
-      fill.color.copy(scratch.blended)
-    }
-
-    const edge = edgeMaterial.current
-    if (edge) {
-      edge.opacity = EDGE_FLOOR + (EDGE_OPACITY - EDGE_FLOOR) * presence
-      edge.color.copy(scratch.blended)
-    }
+    // Before the first morph there is nothing to fade out of, so the opening
+    // shape gets the incoming layer to itself rather than being drawn twice at
+    // half strength.
+    applyLayer(outgoingFill.current, outgoingEdge.current, presence, hasMorphed.current ? 1 - blend : 0)
+    applyLayer(incomingFill.current, incomingEdge.current, presence, hasMorphed.current ? blend : 1)
 
     if (spinner.current) spinner.current.rotation.y += delta * IDLE_SPIN
   })
@@ -211,11 +253,20 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
   return (
     <group>
       <group ref={spinner} scale={SHAPE_SCALE}>
+        {/* The shape being left, and the shape being flown to, over the same
+            vertices. Both are always mounted; the cross-fade turns them on and
+            off, and a layer at zero opacity is skipped by the renderer. */}
         <ShapeSurface
-          geometry={geometry}
+          geometry={outgoing}
           accent={room.accent}
-          fillRef={fillMaterial}
-          edgeRef={edgeMaterial}
+          fillRef={outgoingFill}
+          edgeRef={outgoingEdge}
+        />
+        <ShapeSurface
+          geometry={incoming}
+          accent={room.accent}
+          fillRef={incomingFill}
+          edgeRef={incomingEdge}
         />
 
         {/* Click target. A plain sphere is a steadier and far cheaper raycast

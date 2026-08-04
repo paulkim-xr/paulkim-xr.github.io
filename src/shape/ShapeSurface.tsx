@@ -25,11 +25,15 @@ type ShapeSurfaceProps = {
  * mid-flight between two shapes and the triangles mean nothing yet. Basic
  * materials only — unlit, so a morphing surface with meaningless normals never
  * flashes as the lighting tries to make sense of it.
+ *
+ * Frustum culling is off: the vertices move every frame, so the bounding
+ * sphere three computed on first sight is stale immediately, and a shape can
+ * be culled on the strength of where it used to be.
  */
 export function ShapeSurface({ geometry, accent, fillRef, edgeRef }: ShapeSurfaceProps) {
   return (
     <>
-      <mesh geometry={geometry}>
+      <mesh geometry={geometry} frustumCulled={false}>
         <meshBasicMaterial
           ref={fillRef}
           color={accent}
@@ -39,7 +43,7 @@ export function ShapeSurface({ geometry, accent, fillRef, edgeRef }: ShapeSurfac
           toneMapped={false}
         />
       </mesh>
-      <mesh geometry={geometry}>
+      <mesh geometry={geometry} frustumCulled={false}>
         <meshBasicMaterial
           ref={edgeRef}
           color={accent}
