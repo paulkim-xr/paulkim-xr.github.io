@@ -8,3 +8,4 @@ playwright-report/
 *.tsbuildinfo
 .shot.mjs
 .nvmrc.local
+.walk.mjs

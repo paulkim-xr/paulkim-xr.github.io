@@ -2380,21 +2380,41 @@ export function App() {
     return () => window.clearTimeout(timer)
   }, [state.phase, state.target, focusComplete])
 
-  // The URL follows the machine, so history and the machine cannot disagree.
-  useEffect(() => {
-    if (state.phase === 'masking' && state.direction === 'in' && state.target) {
-      navigate(`/p/${state.target}`)
-    }
-    if (state.phase === 'browsing') {
-      navigate('/')
-    }
-  }, [state.phase, state.direction, state.target, navigate])
+  const currentPath = id ? `/p/${id}` : '/'
+  /**
+   * The path the machine last asked for, held until the router catches up.
+   *
+   * Both directions of sync are needed — the machine pushes history, and
+   * back/forward pushes the machine — but without an authorship marker they
+   * feed each other: on exit the machine reaches `browsing` while `id` is
+   * still the room for one tick, and the URL-to-machine effect immediately
+   * re-selects the room that was just left. Escape then appears to do nothing.
+   */
+  const pendingPath = useRef<string | null>(null)
 
-  // Back/forward: the URL changed without the machine asking. Follow it.
+  // Machine -> URL.
   useEffect(() => {
-    if (!id && state.phase === 'inRoom') exit()
-    if (id && state.phase === 'browsing' && getRoom(id)) select(id)
-  }, [id, state.phase, exit, select])
+    let want: string | null = null
+    if (state.phase === 'masking' && state.direction === 'in' && state.target) {
+      want = `/p/${state.target}`
+    } else if (state.phase === 'browsing') {
+      want = '/'
+    }
+
+    if (want === null || want === currentPath) return
+    pendingPath.current = want
+    void navigate(want)
+  }, [state.phase, state.direction, state.target, currentPath, navigate])
+
+  // URL -> machine, but only for changes the machine did not author.
+  useEffect(() => {
+    if (pendingPath.current !== null) {
+      if (pendingPath.current === currentPath) pendingPath.current = null
+      return
+    }
+    if (state.phase === 'inRoom' && !id) exit()
+    if (state.phase === 'browsing' && id && getRoom(id)) select(id)
+  }, [id, currentPath, state.phase, exit, select])
 
   // Flat keyboard parity with the carousel's wheel and the XR thumbstick.
   useEffect(() => {
