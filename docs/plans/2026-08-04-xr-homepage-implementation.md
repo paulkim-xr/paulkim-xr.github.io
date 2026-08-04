@@ -1258,11 +1258,31 @@ describe('targetRotation', () => {
     expect(Math.abs(rotation)).toBeCloseTo(step)
   })
 
-  test('accumulates instead of snapping back across the seam', () => {
+  test('advancing one index rotates by exactly one step, negatively', () => {
     const step = angleStep(5)
     const first = targetRotation(0, 1, 5)
     const second = targetRotation(first, 2, 5)
-    expect(second - first).toBeCloseTo(step)
+    // Item 0 sits at +Z, so bringing a later item to the front rotates the
+    // ring the negative way. What matters is the magnitude and consistency.
+    expect(first).toBeCloseTo(-step)
+    expect(second - first).toBeCloseTo(-step)
+  })
+
+  test('accumulates around a full loop instead of snapping back at the seam', () => {
+    const step = angleStep(5)
+    let rotation = 0
+    const deltas: number[] = []
+
+    // 0 -> 1 -> 2 -> 3 -> 4 -> 0. The last hop crosses the seam and is the one
+    // a naive implementation unwinds by four steps.
+    for (const index of [1, 2, 3, 4, 0]) {
+      const next = targetRotation(rotation, index, 5)
+      deltas.push(next - rotation)
+      rotation = next
+    }
+
+    for (const delta of deltas) expect(delta).toBeCloseTo(-step)
+    expect(rotation).toBeCloseTo(-step * 5)
   })
 })
 ```
