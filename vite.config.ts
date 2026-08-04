@@ -28,6 +28,7 @@ export default defineConfig({
         'src/shape/merge.ts',
         'src/shape/shapes/**',
         'src/hub/budget.ts',
+        'src/hub/fade.ts',
         'src/hub/wiggle.ts',
         'src/xr/useXrSupport.ts',
       ],
