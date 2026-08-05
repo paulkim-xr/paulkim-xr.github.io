@@ -210,6 +210,39 @@ async function readFrame(page: Page): Promise<Frame> {
 
 const litPixels = async (page: Page) => (await readFrame(page)).lit
 
+/**
+ * Mean brightness of a horizontal band of the frame, given as fractions of the
+ * height measured from the top.
+ *
+ * Useful for asking where something is rather than whether it is there at all.
+ */
+async function bandBrightness(page: Page, from: number, to: number): Promise<number> {
+  return page.evaluate(
+    ([top, bottom]) =>
+      new Promise<number>((resolve) => {
+        const canvas = document.querySelector('canvas')
+        const gl = canvas?.getContext('webgl2') ?? canvas?.getContext('webgl')
+        if (!canvas || !gl) return resolve(-1)
+
+        requestAnimationFrame(() => {
+          // readPixels counts rows from the bottom, so a band measured from the
+          // top has to be flipped before it is asked for.
+          const height = Math.max(1, Math.round((bottom - top) * canvas.height))
+          const y = Math.round((1 - bottom) * canvas.height)
+          const pixels = new Uint8Array(canvas.width * height * 4)
+          gl.readPixels(0, y, canvas.width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+
+          let total = 0
+          for (let i = 0; i < pixels.length; i += 4) {
+            total += pixels[i] + pixels[i + 1] + pixels[i + 2]
+          }
+          resolve(total / (canvas.width * height * 3))
+        })
+      }),
+    [from, to] as const,
+  )
+}
+
 test.describe('the way into a room', () => {
   /** Above this the frame is overwhelmingly white rather than merely lit. */
   const WHITE = 200
@@ -286,6 +319,98 @@ test.describe('the way into a room', () => {
     expect(await peakBrightness(page, left), 'the exit never went through white').toBeGreaterThan(
       WHITE,
     )
+  })
+})
+
+test.describe('the spherical viewing room', () => {
+  /**
+   * How the hub's frame is weighted top against bottom.
+   *
+   * The shape sits above the caption, so an upright hub is heavier at the top.
+   * Rolled over, the weighting inverts. A ratio rather than a level because the
+   * absolute brightness depends on which shape is showing, and the point is
+   * only which way up it is.
+   */
+  async function topHeaviness(page: Page): Promise<number> {
+    const top = await bandBrightness(page, 0.05, 0.22)
+    const bottom = await bandBrightness(page, 0.78, 0.95)
+    return top / bottom
+  }
+
+  async function enterTheRoom(page: Page) {
+    await page.goto('/p/svr')
+    await expect(page.locator('html')).toHaveAttribute('data-phase', 'inRoom', SETTLE)
+    await expect(page.locator('canvas')).toBeVisible()
+    // Long enough for the model to arrive and the reveal to finish.
+    await page.waitForTimeout(2500)
+  }
+
+  test('opens into a room with something drawn in it', async ({ page }) => {
+    const errors = watchForErrors(page)
+    await enterTheRoom(page)
+
+    expect(await litPixels(page), 'the room drew nothing').toBeGreaterThan(2000)
+    expect(errors).toEqual([])
+  })
+
+  test('walking changes what the object looks like', async ({ page }) => {
+    await enterTheRoom(page)
+    const before = await page.screenshot()
+
+    // Far enough to be a different side of the object, not a wobble.
+    await page.keyboard.down('ArrowDown')
+    await page.waitForTimeout(1200)
+    await page.keyboard.up('ArrowDown')
+    await page.waitForTimeout(400)
+
+    expect((await page.screenshot()).equals(before), 'walking moved nothing').toBe(false)
+  })
+
+  test('the room keeps the arrow keys to itself', async ({ page }) => {
+    // The arrows used to step the hub in every phase, so walking a room also
+    // silently reordered the carousel behind it — you came back out facing a
+    // different project than the one you went in from.
+    await enterTheRoom(page)
+    await expect(page.locator('html')).toHaveAttribute('data-project', 'svr')
+
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+
+    await expect(page.locator('html')).toHaveAttribute('data-project', 'svr')
+  })
+
+  test('leaving hands the hub back the right way up', async ({ page }) => {
+    // Walking tips the camera's up-vector over and leaves it there. Every
+    // lookAt in the app reads that vector, so without putting it back the hub
+    // returns upside down.
+    async function leaveAndMeasure(walkFor: number) {
+      await enterTheRoom(page)
+      if (walkFor > 0) {
+        // Past a quarter turn, deliberately. Up to that point the leftover
+        // up-vector still projects onto roughly world-up and the hub comes back
+        // looking fine, so a shorter walk proves nothing. Past it, the vector
+        // swings through the view axis — where lookAt is degenerate — and out
+        // the far side pointing down, which is where the bug actually shows.
+        await page.keyboard.down('ArrowDown')
+        await page.waitForTimeout(walkFor)
+        await page.keyboard.up('ArrowDown')
+      }
+      await page.getByTestId('exit-room').click()
+      await expect(page.locator('html')).toHaveAttribute('data-phase', 'browsing', SETTLE)
+      await page.waitForTimeout(2000)
+      return topHeaviness(page)
+    }
+
+    // The control is the same room and the same shape, left without walking —
+    // not a fresh hub, which is showing a different project entirely and is no
+    // basis for comparison.
+    const withoutWalking = await leaveAndMeasure(0)
+    const afterWalking = await leaveAndMeasure(2400)
+
+    expect(
+      afterWalking,
+      'the hub came back rolled over — it is weighted the wrong way up',
+    ).toBeGreaterThan(withoutWalking * 0.8)
   })
 })
 

@@ -57,10 +57,11 @@ describe('the real project data', () => {
     expect(() => parseProjects(projects)).not.toThrow()
   })
 
-  test('contains the five in-scope projects and the two lab pieces', () => {
+  test('contains the five in-scope projects, the two lab pieces and SVR', () => {
     // Was five exactly. The lab pieces now sit on the same footing, by
     // decision: they are what "living XR lab" means and they earn a place in
-    // the hub rather than a side door.
+    // the hub rather than a side door. SVR joined them as a piece in its own
+    // right rather than as the shared chassis every other room is built on.
     expect(projects.map((p) => p.id).sort()).toEqual(
       [
         'circles',
@@ -70,6 +71,7 @@ describe('the real project data', () => {
         'papercup',
         'project-beta',
         'skiwatch',
+        'svr',
       ].sort(),
     )
   })

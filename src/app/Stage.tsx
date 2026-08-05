@@ -81,6 +81,9 @@ export function Stage({ activeIndex, transition, onStep, xrMode }: StageProps) {
       <ambientLight intensity={0.7} />
       <directionalLight position={[4, 6, 4]} intensity={1.4} castShadow={false} />
 
+      {/* Left enabled even for a room that drives its own camera. That room
+          overrides it every frame while it is mounted, and this is what puts
+          the camera back into hub framing once it is not. */}
       <CameraRig roomFraming={usesRoomFraming(state)} enabled={!xrMode} />
 
       {showHub && (
@@ -100,8 +103,10 @@ export function Stage({ activeIndex, transition, onStep, xrMode }: StageProps) {
 
       {/* Flat room navigation is orbit, per the spec's parity table. It exists
           only inside a room — orbiting the hub would fight the carousel — and
-          never in XR, where the headset owns the camera. */}
-      {!xrMode && state.phase === 'inRoom' && (
+          never in XR, where the headset owns the camera. Rooms you move
+          *through* rather than look at drive the camera themselves and opt out,
+          or the two would fight over it every frame. */}
+      {!xrMode && state.phase === 'inRoom' && !room?.ownsCamera && (
         <OrbitControls
           makeDefault
           enablePan={false}
