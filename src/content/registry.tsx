@@ -9,6 +9,7 @@ import { projectBetaShape } from '../shape/shapes/projectBeta'
 import { boardgameShape } from '../shape/shapes/boardgame'
 import { circlesShape } from '../shape/shapes/circles'
 import { gravityShape } from '../shape/shapes/gravity'
+import { svrShape } from '../shape/shapes/svr'
 
 export type RoomScene = ComponentType<{ room: Room }>
 
@@ -28,6 +29,14 @@ export type Room = Project & {
   accent: string
   /** Mounted behind the void mask. Code-split — absent from the initial bundle. */
   scene: LazyScene
+  /**
+   * Whether the room drives the camera itself.
+   *
+   * The default is orbit, which suits a room you look *at*. A room you are
+   * inside and move through has to own the camera outright — leaving orbit
+   * mounted would give two things a claim on it every frame.
+   */
+  ownsCamera?: boolean
 }
 
 function lazyScene(factory: () => Promise<{ default: RoomScene }>): LazyScene {
@@ -42,12 +51,20 @@ function lazyScene(factory: () => Promise<{ default: RoomScene }>): LazyScene {
  */
 const exhibitScene = () => lazyScene(() => import('../exhibit/Exhibit'))
 
-const bindings: Record<string, Pick<Room, 'shape' | 'accent' | 'scene'>> = {
+const bindings: Record<string, Pick<Room, 'shape' | 'accent' | 'scene' | 'ownsCamera'>> = {
   papercup: { shape: papercupShape, accent: '#9aa4b2', scene: exhibitScene() },
   skiwatch: { shape: skiwatchShape, accent: '#7fb8ff', scene: exhibitScene() },
   'open-ski-data': { shape: openSkiDataShape, accent: '#8ce0c0', scene: exhibitScene() },
   'project-beta': { shape: projectBetaShape, accent: '#ffb27f', scene: exhibitScene() },
   'cli-p2p-boardgame': { shape: boardgameShape, accent: '#c79aff', scene: exhibitScene() },
+  // The first room to graduate off the exhibit template. The rest follow one at
+  // a time; the template stays as the floor for whatever has not yet.
+  svr: {
+    shape: svrShape,
+    accent: '#e4e7ef',
+    scene: lazyScene(() => import('../rooms/svr/SphericalRoom')),
+    ownsCamera: true,
+  },
   // The lab pieces, presented on the same footing as the projects. Their
   // rooms are the standard exhibit; the piece itself lives at its own route,
   // linked from the panel, because neither belongs inside the hub's canvas.

@@ -48,6 +48,13 @@ export const projects: Project[] = [
     links: [{ label: 'Repo', href: 'https://github.com/paulkim-xr/cli-p2p-boardgame' }],
   },
   {
+    id: 'svr',
+    title: 'Spherical Viewing Room',
+    blurb:
+      'A room you view an object from every angle by walking the inside of it. The viewer stands on the inner surface of a tessellated sphere with the subject at the centre — so up points at the middle, and half a turn leaves you inverted.',
+    links: [{ label: 'Source', href: 'https://github.com/paulkim-xr/paulkim-xr.github.io' }],
+  },
+  {
     id: 'circles',
     title: 'Circles',
     blurb:

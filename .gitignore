@@ -17,3 +17,5 @@ playwright-report/
 .s25.mjs
 .font.mjs
 .whiteout.mjs
+.svr.mjs
+.roll.mjs

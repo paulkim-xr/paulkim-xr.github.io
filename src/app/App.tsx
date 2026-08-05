@@ -76,9 +76,15 @@ export function App() {
   // Flat keyboard parity with the carousel's wheel and the XR thumbstick.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowRight') step(1)
-      if (event.key === 'ArrowLeft') step(-1)
-      if (event.key === 'Enter' && state.phase === 'browsing') select(rooms[activeIndex].id)
+      // Browsing only. The arrows belonged to the hub in every phase, which
+      // silently reordered it from inside a room — you would come back out to a
+      // different project than the one you went in from — and left nothing for
+      // a room that wants to use them to move the viewer around.
+      if (state.phase === 'browsing') {
+        if (event.key === 'ArrowRight') step(1)
+        if (event.key === 'ArrowLeft') step(-1)
+        if (event.key === 'Enter') select(rooms[activeIndex].id)
+      }
       if (event.key === 'Escape' && state.phase === 'inRoom') exit()
     }
     window.addEventListener('keydown', onKey)
