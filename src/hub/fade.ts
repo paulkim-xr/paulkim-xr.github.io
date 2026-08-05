@@ -1,3 +1,5 @@
+import { smoothstep } from '../lib/ease'
+
 /**
  * How the hub's surface dissolves and reassembles around a morph.
  *
@@ -22,12 +24,6 @@ export type SurfaceFade = {
   presence: number
   /** 0 = the shape being left, 1 = the shape being flown to. Drives colour. */
   blend: number
-}
-
-/** Hermite ease, clamped. Flat at both ends so the dissolve has no corners. */
-function smoothstep(t: number): number {
-  const x = Math.min(1, Math.max(0, t))
-  return x * x * (3 - 2 * x)
 }
 
 /**

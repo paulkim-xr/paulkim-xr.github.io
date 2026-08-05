@@ -4,10 +4,16 @@ import { useNavigate, useParams } from 'react-router'
 import { getRoom, rooms, roomIndex } from '../content/registry'
 import { browsingIn, initialState } from '../transition/machine'
 import { useTransition } from '../transition/useTransition'
+import { FOCUS_SECONDS } from '../transition/whiteout'
 import { Stage } from './Stage'
 
-/** Milliseconds the focus beat runs before the mask begins closing. */
-const FOCUS_MS = 450
+/**
+ * Milliseconds the focus beat runs before the shape starts to swell.
+ *
+ * The same number the whiteout eases the whitening over — held there rather
+ * than here, so the beat cannot end while the shape is still part-way to white.
+ */
+const FOCUS_MS = FOCUS_SECONDS * 1000
 
 export function App() {
   const { id } = useParams<{ id: string }>()

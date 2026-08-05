@@ -166,37 +166,128 @@ test.describe('the lab', () => {
   })
 })
 
+type Frame = {
+  /** Pixels meaningfully brighter than the clear colour — i.e. drawn. */
+  lit: number
+  /** Mean channel value across the frame, 0-255. */
+  brightness: number
+}
+
 /**
- * Counts pixels that are not the background, read straight out of the drawing
+ * Reads the frame that is actually on screen, straight out of the drawing
  * buffer.
  *
  * `drawImage` onto a 2D canvas is no good here: the WebGL buffer is cleared on
  * composite, so it reads back empty even when the frame drew fine. Reading
- * inside a rAF callback, which runs after the renderer's own, sees the frame
- * that is actually on screen.
+ * inside a rAF callback, which runs after the renderer's own, sees the real
+ * thing.
  */
-async function litPixels(page: Page): Promise<number> {
+async function readFrame(page: Page): Promise<Frame> {
   return page.evaluate(
     () =>
-      new Promise<number>((resolve) => {
+      new Promise<{ lit: number; brightness: number }>((resolve) => {
         const canvas = document.querySelector('canvas')
         const gl = canvas?.getContext('webgl2') ?? canvas?.getContext('webgl')
-        if (!canvas || !gl) return resolve(-1)
+        if (!canvas || !gl) return resolve({ lit: -1, brightness: -1 })
 
         requestAnimationFrame(() => {
           const pixels = new Uint8Array(canvas.width * canvas.height * 4)
           gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
-          let count = 0
-          // The clear colour is #08080c, so anything meaningfully above it is
-          // something that was drawn.
+
+          let lit = 0
+          let total = 0
           for (let i = 0; i < pixels.length; i += 4) {
-            if (pixels[i] > 24 || pixels[i + 1] > 24 || pixels[i + 2] > 24) count++
+            // The clear colour is #08080c, so anything meaningfully above it is
+            // something that was drawn.
+            if (pixels[i] > 24 || pixels[i + 1] > 24 || pixels[i + 2] > 24) lit++
+            total += pixels[i] + pixels[i + 1] + pixels[i + 2]
           }
-          resolve(count)
+          resolve({ lit, brightness: total / (canvas.width * canvas.height * 3) })
         })
       }),
   )
 }
+
+const litPixels = async (page: Page) => (await readFrame(page)).lit
+
+test.describe('the way into a room', () => {
+  /** Above this the frame is overwhelmingly white rather than merely lit. */
+  const WHITE = 200
+
+  /**
+   * Resolves when the machine reaches `phase`, watched from inside the page.
+   *
+   * Polling from the test would miss it: a whole transition is over in about a
+   * second and a half, and every round trip costs a slice of that.
+   */
+  function reaches(page: Page, phase: string) {
+    return page.locator('html').evaluate(
+      (html, wanted) =>
+        new Promise<void>((resolve) => {
+          if (html.dataset.phase === wanted) return resolve()
+          new MutationObserver((_records, observer) => {
+            if (html.dataset.phase !== wanted) return
+            observer.disconnect()
+            resolve()
+          }).observe(html, { attributes: true, attributeFilter: ['data-phase'] })
+        }),
+      phase,
+    )
+  }
+
+  /**
+   * The brightest frame seen before `work` finishes.
+   *
+   * Sampling stops early once the frame is white enough to settle the question,
+   * but `work` is still awaited — a page.evaluate left pending when the test
+   * ends is reported as a worker error rather than a failure, which is a
+   * confusing way to find out a helper leaked.
+   */
+  async function peakBrightness(page: Page, work: Promise<unknown>): Promise<number> {
+    let peak = 0
+    let done = false
+    const settled = work.then(() => {
+      done = true
+    })
+
+    while (!done && peak < WHITE) {
+      peak = Math.max(peak, (await readFrame(page)).brightness)
+    }
+
+    await settled
+    return peak
+  }
+
+  test('the picked shape whitens and swallows the view on the way in', async ({ page }) => {
+    // Selecting used to fade the screen to black. It now turns the chosen shape
+    // into a white mask and grows it until it has taken the whole frame, so the
+    // room opens out of white — this fails over a black fade.
+    await openHub(page)
+    expect((await readFrame(page)).brightness, 'the hub is meant to be a dark scene').toBeLessThan(
+      60,
+    )
+
+    const entered = reaches(page, 'inRoom')
+    await page.keyboard.press('Enter')
+
+    expect(
+      await peakBrightness(page, entered),
+      'the transition never went through white',
+    ).toBeGreaterThan(WHITE)
+  })
+
+  test('leaving goes through white as well', async ({ page }) => {
+    await page.goto('/p/papercup')
+    await expect(page.locator('html')).toHaveAttribute('data-phase', 'inRoom', SETTLE)
+
+    const left = reaches(page, 'browsing')
+    await page.getByTestId('exit-room').click()
+
+    expect(await peakBrightness(page, left), 'the exit never went through white').toBeGreaterThan(
+      WHITE,
+    )
+  })
+})
 
 test.describe('when an asset does not arrive', () => {
   /**

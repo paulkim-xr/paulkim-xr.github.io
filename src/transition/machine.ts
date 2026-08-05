@@ -45,15 +45,21 @@ export function isLocked(state: TransitionState): boolean {
 }
 
 /**
- * Whether the target room's lazy scene should be mounted. It mounts from
- * `focusing` so the download overlaps the animation, and unmounts as soon as
- * the outward reveal starts and the hub is what the viewer will see.
+ * Whether the target room's lazy scene should be mounted.
+ *
+ * Exactly while the camera is framed for the room, and not a phase earlier.
+ * Mounting during `focusing` to overlap the download seemed free, and is not:
+ * the hub is still on screen through the focus and the mask, in hub framing,
+ * so the room mounts *behind* it — a plinth and an info panel hanging in the
+ * air behind the shape the viewer is in the middle of choosing.
+ *
+ * Nothing is lost by waiting. The download is started by `scene.preload()` the
+ * instant a project is picked, which is what actually overlaps the animation;
+ * mounting is only the moment React puts the result on screen.
  */
 export function shouldMountScene(state: TransitionState): boolean {
   if (state.target === null) return false
-  if (state.phase === 'browsing') return false
-  if (state.direction === 'out' && state.phase === 'revealing') return false
-  return true
+  return usesRoomFraming(state)
 }
 
 /**

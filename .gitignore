@@ -16,3 +16,4 @@ playwright-report/
 .probe.mjs
 .s25.mjs
 .font.mjs
+.whiteout.mjs
