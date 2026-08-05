@@ -1,11 +1,14 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import type { Group, MeshBasicMaterial } from 'three'
+import { Color, DoubleSide, FrontSide, type Group, type MeshBasicMaterial } from 'three'
 import type { Room } from '../content/registry'
 import { CanvasText } from '../lib/CanvasText'
 import { WigglyGeometry } from '../lib/morph/WigglyGeometry'
 import { browseHint, coarsePointer } from '../lib/pointer'
 import { EDGE_OPACITY, FILL_OPACITY, ShapeSurface } from '../shape/ShapeSurface'
+import type { Direction, Phase } from '../transition/machine'
+import { usePhaseProgress } from '../transition/usePhaseClock'
+import { whiteoutAt } from '../transition/whiteout'
 import { bufferSizeFor } from './budget'
 import { morphFade, type MorphTiming } from './fade'
 import { bindTopology, createTopology, releaseTopology } from './topology'
@@ -31,6 +34,21 @@ const EDGE_FLOOR = 0.3
 /** Below this, a layer is a draw call rendering nothing. */
 const INVISIBLE = 0.002
 
+/** Past this much whitening the labels are under the shape, so stop drawing them. */
+const LABELS_GONE = 0.4
+
+const WHITE = new Color('#ffffff')
+/**
+ * What the wireframe becomes while the fill turns white.
+ *
+ * Not white as well. A solid white body with white edges is a blank blob —
+ * the posture the shape was holding when it was picked stops being readable at
+ * exactly the moment it is supposed to be the whole point. The edges go grey
+ * instead, so what swells into the camera is a white mask with its outline
+ * still on it.
+ */
+const OUTLINE = new Color('#8b91a3')
+
 const IDLE_SPIN = 0.22
 const SHAPE_SCALE = 1.15
 /** Radius of the click target. Comfortably larger than any shape's silhouette. */
@@ -50,8 +68,11 @@ type MorphHubProps = {
   activeIndex: number
   onStep: (delta: number) => void
   onSelect: (id: string) => void
-  /** True once a transition has begun — the hub stops accepting input. */
-  dimmed: boolean
+  /** False once anything has been picked — the hub stops accepting input. */
+  interactive: boolean
+  /** Drives the whiteout: what the shape does after it has been chosen. */
+  phase: Phase
+  direction: Direction
 }
 
 /**
@@ -120,19 +141,34 @@ function usePointerStep(onStep: (delta: number) => void, enabled: boolean) {
   return dragged
 }
 
-/** Opacity for one layer of the cross-fade, dissolve and weight combined. */
+function mix(from: number, to: number, t: number): number {
+  return from + (to - from) * t
+}
+
+/**
+ * One layer of the cross-fade: dissolve, cross-fade weight and whiteout at once.
+ *
+ * The whiteout is applied last and wins, because it is what turns a browsing
+ * shape into a door. At full whiten the layer is opaque regardless of where the
+ * morph's dissolve had got to.
+ */
 function applyLayer(
   fill: MeshBasicMaterial | null,
   edge: MeshBasicMaterial | null,
   presence: number,
   weight: number,
+  accent: Color,
+  whiten: number,
 ) {
   if (fill) {
-    fill.opacity = FILL_OPACITY * presence * weight
+    fill.opacity = mix(FILL_OPACITY * presence, 1, whiten) * weight
+    fill.color.copy(accent).lerp(WHITE, whiten)
     fill.visible = fill.opacity > INVISIBLE
   }
   if (edge) {
-    edge.opacity = (EDGE_FLOOR + (EDGE_OPACITY - EDGE_FLOOR) * presence) * weight
+    const dissolved = EDGE_FLOOR + (EDGE_OPACITY - EDGE_FLOOR) * presence
+    edge.opacity = mix(dissolved, 1, whiten) * weight
+    edge.color.copy(accent).lerp(OUTLINE, whiten)
     edge.visible = edge.opacity > INVISIBLE
   }
 }
@@ -148,10 +184,20 @@ function applyLayer(
  * What gets drawn is two topologies over its position buffer — the shape being
  * left and the shape being flown to — cross-fading across the flight.
  */
-export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: MorphHubProps) {
+export function MorphHub({
+  rooms,
+  activeIndex,
+  onStep,
+  onSelect,
+  interactive,
+  phase,
+  direction,
+}: MorphHubProps) {
   const clock = useThree((state) => state.clock)
   const spinner = useRef<Group>(null)
+  const labels = useRef<Group>(null)
   const room = rooms[activeIndex]
+  const progressNow = usePhaseProgress(phase, direction)
 
   const bufferSize = useMemo(() => bufferSizeFor(rooms.map((entry) => entry.shape)), [rooms])
 
@@ -208,7 +254,7 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
     steppedAt.current = clock.getElapsedTime()
   }, [activeIndex, clock])
 
-  const dragged = usePointerStep(onStep, !dimmed)
+  const dragged = usePointerStep(onStep, interactive)
 
   // Read once. A pointer type does not change mid-visit, and re-reading it
   // every frame would re-lay out the text.
@@ -227,6 +273,28 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
   const shownAccent = useRef(room.accent)
   const started = useRef(false)
 
+  /**
+   * The colour each layer was bound with.
+   *
+   * Written where the layer is bound and read every frame, because the whiteout
+   * lerps away from it — so it cannot be derived from `room`, which has already
+   * moved on to whatever the viewer stepped to, and it is worth holding as a
+   * Color rather than re-parsing a hex string sixty times a second.
+   */
+  const outgoingAccent = useMemo(() => new Color(), [])
+  const incomingAccent = useMemo(() => new Color(), [])
+
+  /**
+   * Whether the surfaces are currently drawing their far side.
+   *
+   * They have to, once the shape is large enough to have the camera inside it:
+   * with front faces alone the shape would simply vanish at the moment it
+   * swallows the viewer, leaving a hole in the transition until the sheet
+   * arrives. Flipped on the crossing rather than per frame, because changing
+   * `side` invalidates the material's program.
+   */
+  const doubleSided = useRef(false)
+
   useFrame((state, delta) => {
     const now = state.clock.getElapsedTime()
     const position = geometry.attributes.position
@@ -238,8 +306,7 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
       started.current = true
       steppedAt.current = now - TIMING.lead
       bindTopology(incoming, position, geometry.parameters.index, ++topologyVersion.current)
-      incomingFill.current?.color.set(room.accent)
-      incomingEdge.current?.color.set(room.accent)
+      incomingAccent.set(room.accent)
     }
 
     const elapsed = now - (steppedAt.current ?? now)
@@ -252,8 +319,7 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
       outgoingBound.current = true
       hasMorphed.current = true
       bindTopology(outgoing, position, geometry.index, ++topologyVersion.current)
-      outgoingFill.current?.color.set(shownAccent.current)
-      outgoingEdge.current?.color.set(shownAccent.current)
+      outgoingAccent.set(shownAccent.current)
     }
 
     // The dissolve has to finish before the vertices move, so the morph is
@@ -268,26 +334,69 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
       geometry.setMoves(wiggleMoves(geometry))
 
       bindTopology(incoming, position, geometry.parameters.index, ++topologyVersion.current)
-      incomingFill.current?.color.set(target.accent)
-      incomingEdge.current?.color.set(target.accent)
+      incomingAccent.set(target.accent)
       shownAccent.current = target.accent
     }
 
-    geometry.updateVertices(now)
+    const { whiten, swell } = whiteoutAt(phase, direction, progressNow())
+
+    // Frozen from the instant it is picked. The shape is supposed to be the
+    // posture it was caught in, so neither the idle wiggle nor a morph still in
+    // flight may move a vertex once the whitening has begun.
+    if (whiten === 0) geometry.updateVertices(now)
 
     const { presence, blend } = morphFade(elapsed, TIMING)
 
     // Before the first morph there is nothing to fade out of, so the opening
     // shape gets the incoming layer to itself rather than being drawn twice at
     // half strength.
-    applyLayer(outgoingFill.current, outgoingEdge.current, presence, hasMorphed.current ? 1 - blend : 0)
-    applyLayer(incomingFill.current, incomingEdge.current, presence, hasMorphed.current ? blend : 1)
+    const outgoingWeight = hasMorphed.current ? 1 - blend : 0
+    applyLayer(
+      outgoingFill.current,
+      outgoingEdge.current,
+      presence,
+      outgoingWeight,
+      outgoingAccent,
+      whiten,
+    )
+    applyLayer(
+      incomingFill.current,
+      incomingEdge.current,
+      presence,
+      hasMorphed.current ? blend : 1,
+      incomingAccent,
+      whiten,
+    )
 
-    if (spinner.current) spinner.current.rotation.y += delta * IDLE_SPIN
+    const wantsFarSide = whiten > 0
+    if (doubleSided.current !== wantsFarSide) {
+      doubleSided.current = wantsFarSide
+      for (const material of [
+        outgoingFill.current,
+        outgoingEdge.current,
+        incomingFill.current,
+        incomingEdge.current,
+      ]) {
+        if (!material) continue
+        material.side = wantsFarSide ? DoubleSide : FrontSide
+        material.needsUpdate = true
+      }
+    }
+
+    if (spinner.current) {
+      // The spin stops with everything else: a shape that keeps turning while
+      // it swells reads as scenery going past rather than a door opening.
+      if (whiten === 0) spinner.current.rotation.y += delta * IDLE_SPIN
+      spinner.current.scale.setScalar(SHAPE_SCALE * swell)
+    }
+
+    if (labels.current) labels.current.visible = whiten < LABELS_GONE
   })
 
   return (
     <group>
+      {/* Scale is driven per frame by the whiteout, so this is only where it
+          starts — before the first frame has had a chance to set it. */}
       <group ref={spinner} scale={SHAPE_SCALE}>
         {/* The shape being left, and the shape being flown to, over the same
             vertices. Both are always mounted; the cross-fade turns them on and
@@ -304,39 +413,45 @@ export function MorphHub({ rooms, activeIndex, onStep, onSelect, dimmed }: Morph
           fillRef={incomingFill}
           edgeRef={incomingEdge}
         />
-
-        {/* Click target. A plain sphere is a steadier and far cheaper raycast
-            hit than a few hundred vertices in mid-flight, and it gives an XR
-            controller ray something forgiving to land on. The material is
-            invisible rather than the mesh: an invisible *object* is skipped by
-            the raycaster entirely, which would make the hub unclickable. */}
-        <mesh
-          onClick={(event) => {
-            event.stopPropagation()
-            if (dimmed || dragged.current) return
-            onSelect(room.id)
-          }}
-          onPointerOver={(event) => {
-            event.stopPropagation()
-            if (!dimmed) document.body.style.cursor = 'pointer'
-          }}
-          onPointerOut={() => {
-            document.body.style.cursor = 'auto'
-          }}
-        >
-          <sphereGeometry args={[HIT_RADIUS, 12, 8]} />
-          <meshBasicMaterial visible={false} />
-        </mesh>
       </group>
 
-      {/* Outside the spinning group: a label that turns away is no label. */}
-      <CanvasText position={[0, -1.25, 0]} fontSize={0.2} anchorX="center" color="#ffffff">
-        {room.title}
-      </CanvasText>
+      {/* Click target. A plain sphere is a steadier and far cheaper raycast hit
+          than a few hundred vertices in mid-flight, and it gives an XR
+          controller ray something forgiving to land on. The material is
+          invisible rather than the mesh: an invisible *object* is skipped by the
+          raycaster entirely, which would make the hub unclickable.
 
-      <CanvasText position={[0, -1.52, 0]} fontSize={0.075} anchorX="center" color="#6f7787">
-        {browseHint(touch)}
-      </CanvasText>
+          Outside the group the whiteout scales, so the target keeps the size of
+          the shape at rest instead of swelling to swallow the camera along with
+          it. */}
+      <mesh
+        onClick={(event) => {
+          event.stopPropagation()
+          if (!interactive || dragged.current) return
+          onSelect(room.id)
+        }}
+        onPointerOver={(event) => {
+          event.stopPropagation()
+          if (interactive) document.body.style.cursor = 'pointer'
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = 'auto'
+        }}
+      >
+        <sphereGeometry args={[HIT_RADIUS * SHAPE_SCALE, 12, 8]} />
+        <meshBasicMaterial visible={false} />
+      </mesh>
+
+      {/* Outside the spinning group: a label that turns away is no label. */}
+      <group ref={labels}>
+        <CanvasText position={[0, -1.25, 0]} fontSize={0.2} anchorX="center" color="#ffffff">
+          {room.title}
+        </CanvasText>
+
+        <CanvasText position={[0, -1.52, 0]} fontSize={0.075} anchorX="center" color="#6f7787">
+          {browseHint(touch)}
+        </CanvasText>
+      </group>
     </group>
   )
 }

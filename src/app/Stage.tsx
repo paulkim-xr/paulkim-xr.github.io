@@ -6,8 +6,8 @@ import { getRoom, rooms } from '../content/registry'
 import { fitDistance } from '../lib/framing'
 import { MorphHub } from '../hub/MorphHub'
 import { SceneGate } from '../transition/SceneGate'
-import { VoidMask } from '../transition/VoidMask'
-import { isLocked, shouldMountScene, usesRoomFraming } from '../transition/machine'
+import { WhiteSheet } from '../transition/Whiteout'
+import { shouldMountScene, usesRoomFraming } from '../transition/machine'
 import type { Transition } from '../transition/useTransition'
 
 /** Close enough that one shape a metre across fills the frame, with the
@@ -89,7 +89,12 @@ export function Stage({ activeIndex, transition, onStep, xrMode }: StageProps) {
           activeIndex={activeIndex}
           onStep={onStep}
           onSelect={transition.select}
-          dimmed={isLocked(state)}
+          // Not `isLocked`, which lets the focus beat through: by then the shape
+          // has been chosen and is turning white, and a step during it would
+          // start a morph out of the very posture being frozen.
+          interactive={state.phase === 'browsing'}
+          phase={state.phase}
+          direction={state.direction}
         />
       )}
 
@@ -117,7 +122,7 @@ export function Stage({ activeIndex, transition, onStep, xrMode }: StageProps) {
         </Suspense>
       )}
 
-      <VoidMask
+      <WhiteSheet
         phase={state.phase}
         direction={state.direction}
         mode={xrMode ? 'xr' : 'flat'}

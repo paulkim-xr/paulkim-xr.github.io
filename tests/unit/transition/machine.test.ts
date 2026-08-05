@@ -211,10 +211,32 @@ describe('shouldMountScene', () => {
     expect(shouldMountScene(initialState)).toBe(false)
   })
 
-  test('mounts from focusing onward so the download starts early', () => {
-    for (const phase of ['focusing', 'masking', 'swapping', 'revealing', 'inRoom'] as const) {
+  test('does not mount while the hub is still what the viewer is looking at', () => {
+    // The focus and the mask both play in hub framing. A room mounted during
+    // either hangs in the air behind the shape being chosen — its plinth and
+    // its info panel, in the middle of the transition away from them.
+    for (const phase of ['focusing', 'masking'] as const) {
+      expect(shouldMountScene({ ...initialState, phase, target: 'papercup' })).toBe(false)
+    }
+  })
+
+  test('mounts once the view is covered and the camera has moved', () => {
+    for (const phase of ['swapping', 'revealing', 'inRoom'] as const) {
       expect(shouldMountScene({ ...initialState, phase, target: 'papercup' })).toBe(true)
     }
+  })
+
+  test('stays mounted while the exit mask closes over it', () => {
+    // Leaving, the room is what is on screen until the white has covered it.
+    expect(
+      shouldMountScene({
+        phase: 'masking',
+        target: 'papercup',
+        direction: 'out',
+        maskComplete: false,
+        sceneReady: true,
+      }),
+    ).toBe(true)
   })
 
   test('unmounts once the exit reveal has begun', () => {
