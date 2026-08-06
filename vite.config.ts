@@ -37,6 +37,7 @@ export default defineConfig({
         'src/rooms/svr/walk.ts',
         'src/rooms/svr/gaze.ts',
         'src/rooms/svr/controls.ts',
+        'src/rooms/svr/panels.ts',
         'src/lab/circles/field.ts',
         'src/lab/gravity/nbody.ts',
         'src/lab/gravity/scatter.ts',

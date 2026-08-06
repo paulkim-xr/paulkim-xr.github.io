@@ -1,13 +1,22 @@
 import { useGLTF } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
-import { BackSide, Box3, Mesh, Vector3, type BufferGeometry, type Group } from 'three'
+import {
+  BackSide,
+  Box3,
+  Mesh,
+  Vector3,
+  type BufferGeometry,
+  type Group,
+  type PointLight,
+} from 'three'
 import type { Room } from '../../content/registry'
 import { Boundary } from '../../lib/Boundary'
 import { CanvasText } from '../../lib/CanvasText'
 import { LinkButton } from '../../lib/LinkButton'
 import { shellGeometry } from '../../shape/shapes/svr'
 import { gazeAt, headUpAt } from './gaze'
+import { tintPanels } from './panels'
 import { eyeAt, initialStance, upAt, walk } from './walk'
 import { useFirstPerson } from './useFirstPerson'
 
@@ -18,13 +27,60 @@ const SHELL_RADIUS = 9
 /** How far the viewer's eyes are from that surface, towards the centre. */
 const EYE_HEIGHT = 1.65
 /**
- * Subdivisions of the icosahedron the shell is built from. Three is the point
- * where the triangles stop reading as facets of a solid and start reading as a
- * tessellation you are standing inside.
+ * Subdivisions of the icosahedron the shell is built from.
+ *
+ * Chosen against the viewer's own size rather than by eye. Three subdivisions
+ * gives panels 2.7 units across, and standing 1.65 from the wall a viewer
+ * looking at their feet sees a view 1.5 units wide — so a single panel more
+ * than filled the frame, and the floor was one flat tone with nothing in it to
+ * say how big anything was or that it was a surface at all. Eighteen puts about
+ * three panels across that view: enough to read as panelling underfoot, coarse
+ * enough to still read as a geodesic shell from across the room.
+ *
+ * Note this is not a doubling per step — three subdivides each edge into
+ * `detail + 1`, so the count grows with the square and eighteen is 7,220 faces
+ * rather than the millions the name suggests.
  */
-const SHELL_DETAIL = 3
+const SHELL_DETAIL = 18
 /** How tall the object at the centre stands. */
 const OBJECT_HEIGHT = 3.9
+
+/**
+ * How bright the light the viewer carries is, and how far it reaches.
+ *
+ * A lamp at the eye, and it is what makes the shell a floor. Light from the
+ * middle of a sphere would be useless here: every point of the inside is the
+ * same distance from the centre and square-on to it, so a lamp there lights the
+ * whole room to exactly one flat value and the surface disappears. A lamp that
+ * travels with the viewer falls off with distance instead, so the facets
+ * underfoot are bright, the ones across the room are not, and walking moves
+ * that gradient — which is the whole sensation of being on a surface rather
+ * than inside a picture of one.
+ */
+const LAMP_INTENSITY = 34
+const LAMP_REACH = 22
+/**
+ * Softer than the inverse square real light falls off by.
+ *
+ * True falloff over the 1.6 metres underfoot to the 5 across the room is a
+ * factor of ten, which blows out your feet and leaves the far wall black.
+ */
+const LAMP_DECAY = 1.55
+
+/** Where the light on the object hangs, and how hard. */
+const KEY_POSITION: [number, number, number] = [2.1, 2.6, 1.3]
+const KEY_INTENSITY = 19
+/**
+ * Cut off before it can reach the shell.
+ *
+ * The lamp is nearer the object than the wall is, but not by much, and without
+ * a limit it throws a bright patch on the tessellation that reads as a fault in
+ * the room rather than as light.
+ */
+const KEY_REACH = 6.5
+
+/** Enough that nothing in the room is ever pure black. */
+const AMBIENT_INTENSITY = 0.38
 
 /**
  * The Spherical Viewing Room: an object at the centre, and a tessellated shell
@@ -45,8 +101,24 @@ export default function SphericalRoom({ room }: { room: Room }) {
   /** Where the camera is aimed, held across frames rather than allocated in one. */
   const lookingAt = useMemo(() => new Vector3(), [])
 
-  const shell = useMemo(() => shellGeometry(SHELL_RADIUS, SHELL_DETAIL), [])
+  const shell = useMemo(() => {
+    const geometry = shellGeometry(SHELL_RADIUS, SHELL_DETAIL)
+    // The shell arrives as loose triangles with no normals, so this gives each
+    // face its own — which is exactly the flat shading the room wants. Every
+    // facet takes one value from the lamp and the tessellation reads as
+    // panelling catching light rather than as a drawing of a sphere.
+    geometry.computeVertexNormals()
+    // A sphere lit from inside has almost no shading to give: neighbouring
+    // facets are very nearly parallel and take very nearly the same light, so
+    // the floor underfoot came out a flat wash with no scale to it. A tone per
+    // panel puts the tessellation back without drawing a line.
+    tintPanels(geometry)
+    return geometry
+  }, [])
   useEffect(() => () => shell.dispose(), [shell])
+
+  /** The lamp the viewer carries, moved to the eye on every frame. */
+  const lamp = useRef<PointLight>(null)
 
   /**
    * Hands the camera back the way it was found.
@@ -73,41 +145,44 @@ export default function SphericalRoom({ room }: { room: Room }) {
     // they choose, and only one value of it happens to pass through the object.
     camera.up.copy(headUpAt(here, tilt))
     camera.lookAt(lookingAt.copy(camera.position).add(gazeAt(here, tilt)))
+
+    lamp.current?.position.copy(camera.position)
   })
 
   return (
     <group>
-      {/* Unlit, like everything else here: the shapes are drawn as line and
-          wash rather than as surfaces catching light, and a lit shell would
-          have a bright side and a dark side that fought the walking. */}
-      <ambientLight intensity={1} />
+      <ambientLight intensity={AMBIENT_INTENSITY} color={SHELL_COLOUR} />
+      <pointLight
+        ref={lamp}
+        intensity={LAMP_INTENSITY}
+        distance={LAMP_REACH}
+        decay={LAMP_DECAY}
+        color="#e8ecf6"
+      />
+      <pointLight
+        position={KEY_POSITION}
+        intensity={KEY_INTENSITY}
+        distance={KEY_REACH}
+        decay={2}
+        color="#fff3e2"
+      />
 
       <mesh geometry={shell} frustumCulled={false}>
         {/* BackSide: the viewer is inside it, so the faces pointing at them are
             the far ones. Front-side culling would leave the room invisible. */}
-        <meshBasicMaterial
-          color={room.accent}
+        <meshStandardMaterial
+          color={SHELL_COLOUR}
           side={BackSide}
-          transparent
-          opacity={0.05}
-          depthWrite={false}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh geometry={shell} frustumCulled={false}>
-        <meshBasicMaterial
-          color={room.accent}
-          side={BackSide}
-          wireframe
-          transparent
-          opacity={0.4}
-          toneMapped={false}
+          roughness={0.92}
+          metalness={0.04}
+          flatShading
+          vertexColors
         />
       </mesh>
 
       {/* A model that never arrives costs the object, not the room. */}
       <Boundary>
-        <CentrepieceModel accent={room.accent} />
+        <CentrepieceModel />
       </Boundary>
 
       <WallText room={room} />
@@ -115,19 +190,32 @@ export default function SphericalRoom({ room }: { room: Room }) {
   )
 }
 
+/**
+ * What the room is made of.
+ *
+ * Dark and cool against the object's warm bone, because the two have to be told
+ * apart at a glance. The whole reason this room stopped being drawn as
+ * wireframe is that white lines on a dark ground read as the same substance
+ * whatever they are describing — the wall and the thing on show were the same
+ * material, and the eye had nothing to separate them by.
+ */
+const SHELL_COLOUR = '#39404f'
+/** What the object is made of: warm, matt, and lighter than its surroundings. */
+const OBJECT_COLOUR = '#cdc3ac'
+
 useGLTF.preload(SKULL_MODEL)
 
 /**
- * The object the room is built around, drawn in the site's own language rather
- * than its own.
+ * The object the room is built around, as a solid.
  *
- * A faint fill under a wireframe, like every other shape here. That is also why
- * the asset is 159 kB instead of 8.9 MB: with no surface finish to show, its
- * textures, tangents and texture coordinates were all weight paying for
- * nothing, and the mesh could come down to where its wireframe is a legible
- * lattice rather than a grey smear.
+ * Drawn as a lit surface rather than in the wireframe the rest of the site
+ * uses, and it had to be: a white lattice hanging inside a white lattice is one
+ * substance, and the thing the room exists to show was indistinguishable from
+ * the walls it was shown against. Being solid is also what makes walking worth
+ * anything — a wireframe reads the same from both sides at once, so going round
+ * it changed the picture without ever changing what you could see.
  */
-function CentrepieceModel({ accent }: { accent: string }) {
+function CentrepieceModel() {
   const { scene } = useGLTF(SKULL_MODEL)
 
   const { geometry, scale, offset } = useMemo(() => {
@@ -155,16 +243,7 @@ function CentrepieceModel({ accent }: { accent: string }) {
     <group scale={scale}>
       <group position={offset}>
         <mesh geometry={geometry}>
-          <meshBasicMaterial
-            color={accent}
-            transparent
-            opacity={0.12}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </mesh>
-        <mesh geometry={geometry}>
-          <meshBasicMaterial color={accent} wireframe transparent opacity={0.5} toneMapped={false} />
+          <meshStandardMaterial color={OBJECT_COLOUR} roughness={0.62} metalness={0.02} />
         </mesh>
       </group>
     </group>
@@ -181,8 +260,34 @@ function CentrepieceModel({ accent }: { accent: string }) {
  */
 const WALL_ARC = 0.62
 
-/** How much of the shell's thickness the writing floats clear of it. */
-const WALL_CLEARANCE = 0.15
+/**
+ * How far the writing stands proud of the shell.
+ *
+ * More than it looks like it should need, for two reasons that only showed up
+ * once the wall stopped being a transparent wireframe and became a surface that
+ * could swallow things.
+ *
+ * The facets lie inside the sphere they are cut from, so a sign placed at the
+ * nominal radius is behind the wall rather than on it — that was what swallowed
+ * the lower half of this block when the shell became solid. And a flat block
+ * hung against a wall
+ * that curves away pushes its own ends outwards: the sign is turned to face the
+ * arriving viewer, which is the only way it is readable at the glancing angle a
+ * horizon is seen at, and that tilt walks the bottom of the block out through
+ * the shell. It has to stand off far enough that its corners clear too, not
+ * just its middle.
+ */
+const WALL_CLEARANCE = 1.2
+
+/**
+ * The board the writing sits on, sized around the block it has to hold.
+ *
+ * The text runs from the top of the title down to the bottom of the line about
+ * the controls; this is that span with room to breathe either side.
+ */
+const BOARD_WIDTH = 2.86
+const BOARD_HEIGHT = 1.58
+const BOARD_CENTRE = -0.17
 
 /**
  * What the room is, written on the wall ahead of the viewer.
@@ -220,6 +325,15 @@ function WallText({ room }: { room: Room }) {
   // the far side of the sphere, sixteen units away through the middle.
   return (
     <group ref={wall}>
+      {/* A board to write on, rather than writing on the wall itself. Once the
+          shell became a lit surface the text was competing with the facets
+          behind it for contrast, and the link — a dark plate on a dark ground —
+          had stopped reading as something you could press at all. */}
+      <mesh position={[0, BOARD_CENTRE, -0.01]}>
+        <planeGeometry args={[BOARD_WIDTH, BOARD_HEIGHT]} />
+        <meshBasicMaterial color="#12151d" transparent opacity={0.82} toneMapped={false} />
+      </mesh>
+
       <CanvasText position={[0, 0.36, 0]} fontSize={0.2} anchorX="center" color="#ffffff">
         {room.title}
       </CanvasText>
