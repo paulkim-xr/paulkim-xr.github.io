@@ -324,6 +324,14 @@ test.describe('the way into a room', () => {
 
 test.describe('the spherical viewing room', () => {
   /**
+   * Warm enough to be the object rather than the room.
+   *
+   * Half way to the +16 the object measures, and a long way clear of the −20 or
+   * below that every surface of the room gives.
+   */
+  const WARM = 8
+
+  /**
    * How the hub's frame is weighted top against bottom.
    *
    * The shape sits above the caption, so an upright hub is heavier at the top.
@@ -354,13 +362,18 @@ test.describe('the spherical viewing room', () => {
   })
 
   /**
-   * How bright the middle of the frame is — where whatever you are looking at
-   * lands.
+   * How warm the middle of the frame is — red minus blue, where whatever the
+   * viewer is looking at lands.
    *
-   * The object is a dense white wireframe against an all but empty shell, so
-   * this says plainly whether it is in front of the viewer or not.
+   * Colour rather than brightness, because brightness stopped telling these
+   * apart the moment the room became a lit surface: the floor underfoot is lit
+   * by the viewer's own lamp and comes back at 169, against the object's 178.
+   * A test on brightness would have called looking at your feet a hit. The
+   * object is warm bone and the shell is cool slate, so the sign of this says
+   * plainly which of the two is in front of the viewer — measured around zero,
+   * with the object at about +16 and any part of the room at −20 or below.
    */
-  async function centreBrightness(page: Page): Promise<number> {
+  async function centreWarmth(page: Page): Promise<number> {
     return page.evaluate(
       () =>
         new Promise<number>((resolve) => {
@@ -370,8 +383,8 @@ test.describe('the spherical viewing room', () => {
           // A WebGL drawing buffer is cleared on composite, so it has to be read
           // inside a frame — drawImage off it comes back empty.
           requestAnimationFrame(() => {
-            const width = Math.floor(gl.drawingBufferWidth * 0.3)
-            const height = Math.floor(gl.drawingBufferHeight * 0.3)
+            const width = Math.floor(gl.drawingBufferWidth * 0.22)
+            const height = Math.floor(gl.drawingBufferHeight * 0.22)
             const pixels = new Uint8Array(width * height * 4)
             gl.readPixels(
               Math.floor((gl.drawingBufferWidth - width) / 2),
@@ -383,10 +396,8 @@ test.describe('the spherical viewing room', () => {
               pixels,
             )
             let total = 0
-            for (let i = 0; i < pixels.length; i += 4) {
-              total += pixels[i] + pixels[i + 1] + pixels[i + 2]
-            }
-            resolve(total / (width * height * 3))
+            for (let i = 0; i < pixels.length; i += 4) total += pixels[i] - pixels[i + 2]
+            resolve(total / (width * height))
           })
         }),
     )
@@ -418,13 +429,12 @@ test.describe('the spherical viewing room', () => {
     // and out of frame until the viewer chooses to look up at it.
     await enterTheRoom(page)
 
-    const onArrival = await centreBrightness(page)
+    const onArrival = await centreWarmth(page)
     await dragBy(page, 0, 550)
-    const lookingUp = await centreBrightness(page)
+    const lookingUp = await centreWarmth(page)
 
-    expect(lookingUp, 'looking up did not bring the object into view').toBeGreaterThan(
-      onArrival * 2,
-    )
+    expect(onArrival, 'the object was already in front of the viewer on arrival').toBeLessThan(0)
+    expect(lookingUp, 'looking up did not bring the object into view').toBeGreaterThan(WARM)
   })
 
   test('the object is overhead from anywhere in the room', async ({ page }) => {
@@ -445,11 +455,12 @@ test.describe('the spherical viewing room', () => {
     await page.keyboard.up('ArrowUp')
     await page.waitForTimeout(400)
 
-    const level = await centreBrightness(page)
+    const level = await centreWarmth(page)
     await dragBy(page, 0, 550)
-    const lookingUp = await centreBrightness(page)
+    const lookingUp = await centreWarmth(page)
 
-    expect(lookingUp, 'the object was not overhead from here').toBeGreaterThan(level * 2)
+    expect(level, 'the object was in front of the viewer rather than above them').toBeLessThan(0)
+    expect(lookingUp, 'the object was not overhead from here').toBeGreaterThan(WARM)
   })
 
   test('walking changes what the object looks like', async ({ page }) => {
