@@ -7,13 +7,11 @@ import { Boundary } from '../../lib/Boundary'
 import { CanvasText } from '../../lib/CanvasText'
 import { LinkButton } from '../../lib/LinkButton'
 import { shellGeometry } from '../../shape/shapes/svr'
-import { eyeAt, facingAt, NORTH_POLE } from './walk'
-import { useWalkControls } from './useWalkControls'
+import { gazeAt, headUpAt } from './gaze'
+import { eyeAt, initialStance, upAt, walk } from './walk'
+import { useFirstPerson } from './useFirstPerson'
 
 const SKULL_MODEL = '/models/skull.glb'
-
-/** The axis a step sideways turns about — see walk.ts. */
-const SIDEWAYS = new Vector3(1, 0, 0)
 
 /** How big the room is, from the middle to the surface you stand on. */
 const SHELL_RADIUS = 9
@@ -32,16 +30,20 @@ const OBJECT_HEIGHT = 3.9
  * The Spherical Viewing Room: an object at the centre, and a tessellated shell
  * you walk the inside of to see it from every angle.
  *
- * Standing on the inside means the middle of the sphere is directly overhead,
- * so the object is always above the viewer and the camera always looks straight
- * up the body axis at it. Walking does not move a camera around a subject — it
- * rotates the viewer's whole frame across the surface, carrying which way is up
- * along with it. Half a turn later they are upside down relative to where they
- * started, and nothing has gone wrong.
+ * A viewer stands on that inner surface and looks at the horizon, the way a
+ * person in a room looks at a room. The object is not in front of them — the
+ * middle of the sphere is directly overhead from anywhere on the inside of it,
+ * so seeing the thing is something they do, by looking up. Walking does not
+ * swing a camera around a subject; it rotates the viewer's whole frame across
+ * the surface, carrying which way is up along with it. Half a turn later they
+ * are upside down relative to where they started, and nothing has gone wrong.
  */
 export default function SphericalRoom({ room }: { room: Room }) {
   const camera = useThree((state) => state.camera)
-  const { stance, advance } = useWalkControls()
+  const { stance, pitch, advance } = useFirstPerson()
+
+  /** Where the camera is aimed, held across frames rather than allocated in one. */
+  const lookingAt = useMemo(() => new Vector3(), [])
 
   const shell = useMemo(() => shellGeometry(SHELL_RADIUS, SHELL_DETAIL), [])
   useEffect(() => () => shell.dispose(), [shell])
@@ -62,15 +64,15 @@ export default function SphericalRoom({ room }: { room: Room }) {
 
   useFrame((_state, delta) => {
     advance(delta)
+    const here = stance.current
+    const tilt = pitch.current
 
-    camera.position.copy(eyeAt(stance.current, SHELL_RADIUS - EYE_HEIGHT))
-    // The object is straight overhead, so the view direction is the body axis
-    // and some tangent has to decide which way round the picture sits. Looking
-    // up, what falls at the top of the frame is what is behind your head — so
-    // the reverse of the way you are walking. Which also happens to be the
-    // choice that has the room arrive the right way up.
-    camera.up.copy(facingAt(stance.current)).negate()
-    camera.lookAt(0, 0, 0)
+    camera.position.copy(eyeAt(here, SHELL_RADIUS - EYE_HEIGHT))
+    // Aimed a step along the gaze rather than at a fixed point, because there
+    // is no fixed point to aim at: where the viewer is looking is a direction
+    // they choose, and only one value of it happens to pass through the object.
+    camera.up.copy(headUpAt(here, tilt))
+    camera.lookAt(lookingAt.copy(camera.position).add(gazeAt(here, tilt)))
   })
 
   return (
@@ -170,52 +172,62 @@ function CentrepieceModel({ accent }: { accent: string }) {
 }
 
 /**
- * How far round the shell from the far wall's centre the writing sits.
+ * How far ahead along the floor the writing sits, in radians of arc.
  *
- * Straight behind the object is straight behind the object: the viewer looks
- * along the axis the object is on, so text centred on the far wall is exactly
- * what the object covers. Far enough round to clear its silhouette, near enough
- * to still be inside a 50° field of view on arrival.
+ * Expressed as a walk rather than as an axis and an angle, because that is what
+ * it is: the writing is a few paces in front of where the viewer arrives. Far
+ * enough that the wall it is on has curved up to face them, near enough to be
+ * the first thing in the frame.
  */
-const WALL_ARC = 0.56
+const WALL_ARC = 0.62
+
+/** How much of the shell's thickness the writing floats clear of it. */
+const WALL_CLEARANCE = 0.15
 
 /**
- * What the room is, written on the wall.
+ * What the room is, written on the wall ahead of the viewer.
  *
- * On the shell rather than on a panel hanging in front of the viewer — the
- * whole point of the room is that it is a place, and a place can have writing
- * on it. Positioned so the viewer arrives looking at the object with the words
- * below it, and once they walk away it stays where it is, because it is part of
- * the room rather than part of the interface.
+ * On the shell rather than on a panel hanging in front of them — the whole
+ * point of the room is that it is a place, and a place can have writing on it.
+ * It is where they are looking when they arrive, and once they walk away it
+ * stays where it is, because it is part of the room rather than part of the
+ * interface. Which is also why it tells them to look up: nothing else in the
+ * frame will, and the object is the reason the room exists.
  */
 function WallText({ room }: { room: Room }) {
   const wall = useRef<Group>(null)
 
   // Placed and aimed rather than rotated by hand. Object3D.lookAt turns +Z —
   // which is the way text faces — towards the target, and takes its roll from
-  // `up`, so this is upright from the stance the room opens on. Composing the
-  // same thing out of Euler angles is where a wall of text ends up mirrored,
-  // because facing *away* from the viewer still looks like facing them.
+  // `up`, so this is upright and square-on from the stance the room opens on.
+  // Composing the same thing out of Euler angles is where a wall of text ends
+  // up mirrored, because facing *away* from the viewer still looks like facing
+  // them.
   useLayoutEffect(() => {
     if (!wall.current) return
-    wall.current.position.copy(NORTH_POLE).multiplyScalar(-(SHELL_RADIUS - 0.15))
-    wall.current.position.applyAxisAngle(SIDEWAYS, -WALL_ARC)
-    wall.current.up.set(0, 1, 0)
-    wall.current.lookAt(0, 0, 0)
+    const arrival = initialStance()
+    const ahead = walk(arrival, { forward: WALL_ARC, sideways: 0 })
+
+    wall.current.position.copy(eyeAt(ahead, SHELL_RADIUS - WALL_CLEARANCE))
+    wall.current.up.copy(upAt(arrival))
+    wall.current.lookAt(eyeAt(arrival, SHELL_RADIUS - EYE_HEIGHT))
   }, [])
 
   const links = room.links
 
+  // Sized for a wall about five units off, which is where the one in front of a
+  // standing viewer is. The old numbers were three times these: they were for
+  // the far side of the sphere, sixteen units away through the middle.
   return (
     <group ref={wall}>
-      <CanvasText position={[0, 1.1, 0]} fontSize={0.62} anchorX="center" color="#ffffff">
+      <CanvasText position={[0, 0.36, 0]} fontSize={0.2} anchorX="center" color="#ffffff">
         {room.title}
       </CanvasText>
 
       <CanvasText
-        position={[0, 0.55, 0]}
-        fontSize={0.24}
-        maxWidth={7}
+        position={[0, 0.18, 0]}
+        fontSize={0.078}
+        maxWidth={2.3}
         lineHeight={1.5}
         anchorX="center"
         anchorY="top"
@@ -224,7 +236,9 @@ function WallText({ room }: { room: Room }) {
         {room.blurb}
       </CanvasText>
 
-      <group position={[0, -1.35, 0]} scale={2.2}>
+      {/* Scaled past what the text alone would want, so the plate stays a real
+          touch target on a phone rather than a 30px sliver of one. */}
+      <group position={[0, -0.52, 0]} scale={1.4}>
         {links.map((link, index) => (
           <LinkButton
             key={link.href}
@@ -233,6 +247,10 @@ function WallText({ room }: { room: Room }) {
           />
         ))}
       </group>
+
+      <CanvasText position={[0, -0.76, 0]} fontSize={0.062} anchorX="center" color="#767e91">
+        drag to look around · arrows to walk · look up for the object
+      </CanvasText>
     </group>
   )
 }
