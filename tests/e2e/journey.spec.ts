@@ -353,6 +353,105 @@ test.describe('the spherical viewing room', () => {
     expect(errors).toEqual([])
   })
 
+  /**
+   * How bright the middle of the frame is — where whatever you are looking at
+   * lands.
+   *
+   * The object is a dense white wireframe against an all but empty shell, so
+   * this says plainly whether it is in front of the viewer or not.
+   */
+  async function centreBrightness(page: Page): Promise<number> {
+    return page.evaluate(
+      () =>
+        new Promise<number>((resolve) => {
+          const canvas = document.querySelector('canvas') as HTMLCanvasElement
+          const gl = (canvas.getContext('webgl2') ??
+            canvas.getContext('webgl')) as WebGLRenderingContext
+          // A WebGL drawing buffer is cleared on composite, so it has to be read
+          // inside a frame — drawImage off it comes back empty.
+          requestAnimationFrame(() => {
+            const width = Math.floor(gl.drawingBufferWidth * 0.3)
+            const height = Math.floor(gl.drawingBufferHeight * 0.3)
+            const pixels = new Uint8Array(width * height * 4)
+            gl.readPixels(
+              Math.floor((gl.drawingBufferWidth - width) / 2),
+              Math.floor((gl.drawingBufferHeight - height) / 2),
+              width,
+              height,
+              gl.RGBA,
+              gl.UNSIGNED_BYTE,
+              pixels,
+            )
+            let total = 0
+            for (let i = 0; i < pixels.length; i += 4) {
+              total += pixels[i] + pixels[i + 1] + pixels[i + 2]
+            }
+            resolve(total / (width * height * 3))
+          })
+        }),
+    )
+  }
+
+  /** Drags the room past the viewer, the way a hand on a panorama would. */
+  async function dragBy(page: Page, dx: number, dy: number) {
+    const box = (await page.locator('canvas').boundingBox())!
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    for (let step = 1; step <= 20; step++) {
+      await page.mouse.move(x + (dx * step) / 20, y + (dy * step) / 20)
+      await page.waitForTimeout(16)
+    }
+    await page.mouse.up()
+    await page.waitForTimeout(400)
+  }
+
+  test('the viewer arrives looking at the room, and finds the object by looking up', async ({
+    page,
+  }) => {
+    // The room is a place you stand in, not a turntable you are strapped to.
+    // The camera used to be aimed permanently through the centre, so the object
+    // was the only thing it was ever possible to see and "walking around it"
+    // was really just spinning it. Arriving level means the object is overhead
+    // and out of frame until the viewer chooses to look up at it.
+    await enterTheRoom(page)
+
+    const onArrival = await centreBrightness(page)
+    await dragBy(page, 0, 550)
+    const lookingUp = await centreBrightness(page)
+
+    expect(lookingUp, 'looking up did not bring the object into view').toBeGreaterThan(
+      onArrival * 2,
+    )
+  })
+
+  test('the object is overhead from anywhere in the room', async ({ page }) => {
+    // What the room promises: walk anywhere on the shell and the thing is still
+    // above you, because the centre of a sphere is overhead from every point on
+    // the inside of it. Pitch has to be applied in the viewer's own frame for
+    // this to hold — tilted about a world axis instead, looking up works where
+    // they started and misses everywhere else.
+    await enterTheRoom(page)
+
+    // A long way round, and across the pole rather than along a meridian.
+    await page.keyboard.down('ArrowUp')
+    await page.waitForTimeout(2000)
+    await page.keyboard.up('ArrowUp')
+    await dragBy(page, 380, 0)
+    await page.keyboard.down('ArrowUp')
+    await page.waitForTimeout(1200)
+    await page.keyboard.up('ArrowUp')
+    await page.waitForTimeout(400)
+
+    const level = await centreBrightness(page)
+    await dragBy(page, 0, 550)
+    const lookingUp = await centreBrightness(page)
+
+    expect(lookingUp, 'the object was not overhead from here').toBeGreaterThan(level * 2)
+  })
+
   test('walking changes what the object looks like', async ({ page }) => {
     await enterTheRoom(page)
     const before = await page.screenshot()

@@ -32,6 +32,11 @@ export default defineConfig({
         'src/hub/budget.ts',
         'src/hub/fade.ts',
         'src/hub/wiggle.ts',
+        // The room's pure modules. Missed when SVR landed, so its walking maths
+        // was carrying tests that counted towards nothing.
+        'src/rooms/svr/walk.ts',
+        'src/rooms/svr/gaze.ts',
+        'src/rooms/svr/controls.ts',
         'src/lab/circles/field.ts',
         'src/lab/gravity/nbody.ts',
         'src/lab/gravity/scatter.ts',

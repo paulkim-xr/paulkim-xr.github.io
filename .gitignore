@@ -19,3 +19,4 @@ playwright-report/
 .whiteout.mjs
 .svr.mjs
 .roll.mjs
+.firstperson.mjs

@@ -65,6 +65,26 @@ export function walk(stance: Stance, step: Step): Stance {
 }
 
 /**
+ * The stance reached by turning on the spot, in radians, positive to the right.
+ *
+ * Turning is not a step and does not belong in one: it changes which way the
+ * viewer faces without changing where they are standing. Composed on the right
+ * about the axis their own body is on, which is the one direction a rotation
+ * can leave a point on a sphere exactly where it was — so this moves the view
+ * and nothing else, at any point on the surface including the poles.
+ */
+export function turn(stance: Stance, radians: number): Stance {
+  if (radians === 0) return stance
+
+  return {
+    orientation: stance.orientation
+      .clone()
+      .multiply(new Quaternion().setFromAxisAngle(NORTH_POLE, radians))
+      .normalize(),
+  }
+}
+
+/**
  * Where on a sphere of `radius` the stance puts the viewer's eyes.
  *
  * The reference point is the north pole, carried around by the orientation.
@@ -90,11 +110,11 @@ const FACING = new Vector3(0, -1, 0)
 /**
  * Which way the viewer is facing, along the surface.
  *
- * Perpendicular to up by construction, so it is a legal camera up-vector — and
- * the useful one. The object being viewed is directly overhead, so the camera
- * looks straight along the body axis and *some* tangent has to decide which way
- * round the picture sits. Using the direction of travel means walking forward
- * slides the view rather than spinning it.
+ * Perpendicular to up by construction, so together they are the two axes of a
+ * head: this is the horizon a standing viewer looks at, and `upAt` is the way
+ * they tilt to look off it. The object hanging at the centre is straight up
+ * from here, which is the whole reason looking up is a thing you do in this
+ * room rather than the only thing you can do.
  */
 export function facingAt(stance: Stance): Vector3 {
   return FACING.clone().applyQuaternion(stance.orientation)

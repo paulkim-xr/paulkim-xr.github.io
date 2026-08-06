@@ -5,6 +5,7 @@ import {
   facingAt,
   initialStance,
   NORTH_POLE,
+  turn,
   upAt,
   walk,
   type Stance,
@@ -143,6 +144,65 @@ describe('the poles, where an angle-based walk would break', () => {
     const stepped = walk(atPole, sideways(0.5))
 
     expect(eyeAt(stepped, RADIUS).distanceTo(eyeAt(atPole, RADIUS))).toBeGreaterThan(0.1)
+  })
+})
+
+describe('turning on the spot', () => {
+  test('turning does not take the viewer anywhere', () => {
+    // The whole difference between turning and stepping. A rotation about any
+    // other axis moves them across the surface; this one has to leave their
+    // feet exactly where they were, wherever on the sphere that is.
+    for (const start of [initialStance(), journey(initialStance(), forward(1.2), sideways(-0.6))]) {
+      const spun = turn(start, 1.3)
+      expect(eyeAt(spun, RADIUS).distanceTo(eyeAt(start, RADIUS))).toBeCloseTo(0, 9)
+    }
+  })
+
+  test('turning does change which way they face', () => {
+    const start = initialStance()
+    expect(facingAt(turn(start, 1.3)).dot(facingAt(start))).toBeLessThan(0.99)
+  })
+
+  test('a turn of nothing is no turn at all', () => {
+    const start = initialStance()
+    expect(facingAt(turn(start, 0)).distanceTo(facingAt(start))).toBeCloseTo(0, 12)
+  })
+
+  test('all the way round comes back to facing the same way', () => {
+    const start = initialStance()
+    expect(facingAt(turn(start, Math.PI * 2)).distanceTo(facingAt(start))).toBeCloseTo(0, 6)
+  })
+
+  test('a positive turn goes to the viewer’s right', () => {
+    // Their right hand, not the world's. Backwards, and every look control in
+    // the room is mirrored — which reads as the drag being inverted rather than
+    // as an axis being wrong, so it is worth pinning the sign.
+    const start = journey(initialStance(), forward(0.8), sideways(0.5))
+    const right = new Vector3().crossVectors(facingAt(start), upAt(start))
+
+    expect(facingAt(turn(start, 0.3)).dot(right)).toBeGreaterThan(0)
+  })
+
+  test('turning keeps the viewer upright', () => {
+    const start = journey(initialStance(), forward(2.1))
+    expect(upAt(turn(start, 2.4)).distanceTo(upAt(start))).toBeCloseTo(0, 9)
+  })
+
+  test('a turn then a step walks the new way, not the old one', () => {
+    const start = initialStance()
+    const spun = turn(start, Math.PI / 2)
+
+    const wentStraight = eyeAt(walk(start, forward(0.4)), RADIUS)
+    const wentAfterTurning = eyeAt(walk(spun, forward(0.4)), RADIUS)
+
+    expect(wentAfterTurning.distanceTo(wentStraight)).toBeGreaterThan(0.5)
+  })
+
+  test('turning never drifts off unit length', () => {
+    let stance = initialStance()
+    for (let i = 0; i < 5000; i++) stance = turn(stance, 0.023)
+
+    expect(stance.orientation.length()).toBeCloseTo(1, 10)
   })
 })
 
