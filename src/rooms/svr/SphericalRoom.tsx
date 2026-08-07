@@ -16,7 +16,7 @@ import { CanvasText } from '../../lib/CanvasText'
 import { LinkButton } from '../../lib/LinkButton'
 import { shellGeometry } from '../../shape/shapes/svr'
 import { gazeAt, headUpAt } from './gaze'
-import { tintPanels } from './panels'
+import { tintPanels } from '../panels'
 import { eyeAt, initialStance, upAt, walk } from './walk'
 import { useFirstPerson } from './useFirstPerson'
 

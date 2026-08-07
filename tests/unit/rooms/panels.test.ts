@@ -6,7 +6,7 @@ import {
   SphereGeometry,
   Vector3,
 } from 'three'
-import { tintOf, tintPanels, TINT_MAX, TINT_MIN } from '../../../src/rooms/svr/panels'
+import { tintOf, tintPanels, TINT_MAX, TINT_MIN } from '../../../src/rooms/panels'
 import { positionsOf } from '../../../src/shape/merge'
 
 /** The shell as the room builds it: loose triangles, no index. */

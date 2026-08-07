@@ -43,6 +43,23 @@ function axis(
 }
 
 /**
+ * How fast a particular room moves its viewer.
+ *
+ * A room sets its own pace because the rooms are not the same shape. Walking
+ * the inside of a sphere is measured in radians of arc, walking a corridor in
+ * metres along the floor, and one number cannot be both — 0.85 is a comfortable
+ * stroll on a shell of radius nine and a sprint down a room eighteen long.
+ */
+export type Rates = {
+  /** Walking and stepping across. */
+  move: number
+  /** Turning and tilting. */
+  look: number
+}
+
+export const DEFAULT_RATES: Rates = { move: ARC_PER_SECOND, look: LOOK_PER_SECOND }
+
+/**
  * What the keys held down come to over a frame of `seconds`.
  *
  * Keys are matched lower-cased, because `event.key` for a letter is the letter
@@ -54,14 +71,18 @@ function axis(
  * and WASD to go and to turn, and page up and down for the head, so the room's
  * one indispensable move — looking up — is reachable without a mouse.
  */
-export function motionFrom(held: ReadonlySet<string>, seconds: number): Motion {
+export function motionFrom(
+  held: ReadonlySet<string>,
+  seconds: number,
+  rates: Rates = DEFAULT_RATES,
+): Motion {
   if (held.size === 0) return NONE
 
   return {
-    forward: axis(held, seconds, ARC_PER_SECOND, ['arrowup', 'w'], ['arrowdown', 's']),
-    sideways: axis(held, seconds, ARC_PER_SECOND, ['d'], ['a']),
-    turned: axis(held, seconds, LOOK_PER_SECOND, ['arrowright'], ['arrowleft']),
-    tilted: axis(held, seconds, LOOK_PER_SECOND, ['pageup'], ['pagedown']),
+    forward: axis(held, seconds, rates.move, ['arrowup', 'w'], ['arrowdown', 's']),
+    sideways: axis(held, seconds, rates.move, ['d'], ['a']),
+    turned: axis(held, seconds, rates.look, ['arrowright'], ['arrowleft']),
+    tilted: axis(held, seconds, rates.look, ['pageup'], ['pagedown']),
   }
 }
 
