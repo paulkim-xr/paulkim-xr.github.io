@@ -36,8 +36,11 @@ export default defineConfig({
         // was carrying tests that counted towards nothing.
         'src/rooms/svr/walk.ts',
         'src/rooms/svr/gaze.ts',
-        'src/rooms/svr/controls.ts',
-        'src/rooms/svr/panels.ts',
+        'src/rooms/controls.ts',
+        'src/rooms/papercup/wave.ts',
+        'src/rooms/papercup/stroll.ts',
+        'src/rooms/papercup/corridor.ts',
+        'src/rooms/panels.ts',
         'src/lab/circles/field.ts',
         'src/lab/gravity/nbody.ts',
         'src/lab/gravity/scatter.ts',

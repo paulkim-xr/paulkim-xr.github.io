@@ -5,7 +5,7 @@ import {
   LOOK_PER_SECOND,
   lookFrom,
   motionFrom,
-} from '../../../src/rooms/svr/controls'
+} from '../../../src/rooms/controls'
 
 const FRAME = 1 / 60
 
@@ -77,6 +77,20 @@ describe('walking on the keyboard', () => {
     const short = motionFrom(holding('arrowup'), FRAME).forward
     const long = motionFrom(holding('arrowup'), FRAME * 4).forward
     expect(long).toBeCloseTo(short * 4, 12)
+  })
+
+  test('a room can set its own pace', () => {
+    // The rooms are not the same shape: the sphere measures a step in radians
+    // of arc, the corridor in metres of floor. One number cannot be both.
+    const brisk = motionFrom(holding('arrowup'), FRAME, { move: 4, look: 1 })
+    expect(brisk.forward).toBeCloseTo(4 * FRAME, 12)
+
+    const turning = motionFrom(holding('arrowright'), FRAME, { move: 4, look: 2.5 })
+    expect(turning.turned).toBeCloseTo(2.5 * FRAME, 12)
+  })
+
+  test('a room that says nothing walks at the default pace', () => {
+    expect(motionFrom(holding('arrowup'), FRAME).forward).toBeCloseTo(ARC_PER_SECOND * FRAME, 12)
   })
 
   test('keys that mean nothing here mean nothing', () => {

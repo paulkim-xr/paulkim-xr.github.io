@@ -44,21 +44,24 @@ function lazyScene(factory: () => Promise<{ default: RoomScene }>): LazyScene {
 }
 
 /**
- * The exhibit template is every project's floor. Graduating a project to a
- * bespoke room is a one-line change here:
+ * The exhibit template is the floor for whatever has not been given a room of
+ * its own yet. Graduating a project off it is a one-line change here:
  *
  *   scene: lazyScene(() => import('../rooms/papercup/StringRoom'))
  */
 const exhibitScene = () => lazyScene(() => import('../exhibit/Exhibit'))
 
 const bindings: Record<string, Pick<Room, 'shape' | 'accent' | 'scene' | 'ownsCamera'>> = {
-  papercup: { shape: papercupShape, accent: '#9aa4b2', scene: exhibitScene() },
+  papercup: {
+    shape: papercupShape,
+    accent: '#9aa4b2',
+    scene: lazyScene(() => import('../rooms/papercup/StringRoom')),
+    ownsCamera: true,
+  },
   skiwatch: { shape: skiwatchShape, accent: '#7fb8ff', scene: exhibitScene() },
   'open-ski-data': { shape: openSkiDataShape, accent: '#8ce0c0', scene: exhibitScene() },
   'project-beta': { shape: projectBetaShape, accent: '#ffb27f', scene: exhibitScene() },
   'cli-p2p-boardgame': { shape: boardgameShape, accent: '#c79aff', scene: exhibitScene() },
-  // The first room to graduate off the exhibit template. The rest follow one at
-  // a time; the template stays as the floor for whatever has not yet.
   svr: {
     shape: svrShape,
     accent: '#e4e7ef',

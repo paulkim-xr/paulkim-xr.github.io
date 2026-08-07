@@ -524,6 +524,114 @@ test.describe('the spherical viewing room', () => {
   })
 })
 
+test.describe('the papercup room', () => {
+  /**
+   * How bright a band across the middle of the frame is.
+   *
+   * The room is dark and almost nothing in it moves, so this is a plain read on
+   * whether anything is crossing it: at rest it sits on one value, and a call
+   * travelling the string drags it up as it passes.
+   *
+   * A band rather than the whole frame because this is sampled repeatedly and a
+   * full read-back of a million pixels on a software renderer costs more than
+   * the interval between samples — the first version of this test timed out
+   * measuring rather than waiting.
+   */
+  async function brightness(page: Page): Promise<number> {
+    return page.evaluate(
+      () =>
+        new Promise<number>((resolve) => {
+          const canvas = document.querySelector('canvas') as HTMLCanvasElement
+          const gl = (canvas.getContext('webgl2') ??
+            canvas.getContext('webgl')) as WebGLRenderingContext
+          requestAnimationFrame(() => {
+            const width = gl.drawingBufferWidth
+            const height = Math.floor(gl.drawingBufferHeight * 0.25)
+            const pixels = new Uint8Array(width * height * 4)
+            gl.readPixels(
+              0,
+              Math.floor((gl.drawingBufferHeight - height) / 2),
+              width,
+              height,
+              gl.RGBA,
+              gl.UNSIGNED_BYTE,
+              pixels,
+            )
+            let total = 0
+            for (let i = 0; i < pixels.length; i += 4) {
+              total += pixels[i] + pixels[i + 1] + pixels[i + 2]
+            }
+            resolve(total / (width * height * 3))
+          })
+        }),
+    )
+  }
+
+  async function enterTheRoom(page: Page) {
+    await page.goto('/p/papercup')
+    await expect(page.locator('html')).toHaveAttribute('data-phase', 'inRoom', SETTLE)
+    await expect(page.locator('canvas')).toBeVisible()
+    // Long enough for the reveal to finish and the room to settle.
+    await page.waitForTimeout(2500)
+  }
+
+  test('opens into a room with something drawn in it', async ({ page }) => {
+    const errors = watchForErrors(page)
+    await enterTheRoom(page)
+
+    expect(await litPixels(page), 'the room drew nothing').toBeGreaterThan(2000)
+    expect(errors).toEqual([])
+  })
+
+  test('a call crosses the room, and the room goes quiet again', async ({ page }) => {
+    // The whole of what this room is. The pulse is the only real light in it, so
+    // if something is genuinely travelling the string the frame brightens as it
+    // comes and settles back once it has gone. A room where nothing moved — or
+    // where the pulse never lit anything — would sit on one value throughout.
+    test.slow()
+    await enterTheRoom(page)
+    await page.keyboard.press('Space')
+
+    const seen: number[] = []
+    for (let sample = 0; sample < 14; sample++) {
+      seen.push(await brightness(page))
+      await page.waitForTimeout(240)
+    }
+
+    const quietest = Math.min(...seen)
+    const brightest = Math.max(...seen)
+
+    expect(brightest / quietest, 'nothing crossed the room').toBeGreaterThan(1.4)
+    expect(seen.at(-1), 'the room never went quiet again').toBeLessThan(brightest * 0.9)
+  })
+
+  test('the room keeps the arrow keys to itself', async ({ page }) => {
+    await enterTheRoom(page)
+    await expect(page.locator('html')).toHaveAttribute('data-project', 'papercup')
+
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+
+    await expect(page.locator('html')).toHaveAttribute('data-project', 'papercup')
+  })
+
+  test('walking at the end of the room does not walk out of it', async ({ page }) => {
+    // Nothing leaves this room, the viewer included. Walked through the end
+    // wall, they would be outside a box lit only from within and the frame
+    // would go to almost nothing.
+    await enterTheRoom(page)
+
+    await page.keyboard.down('ArrowUp')
+    // Comfortably longer than the room is: at this pace, far enough to cross it
+    // twice over.
+    await page.waitForTimeout(9000)
+    await page.keyboard.up('ArrowUp')
+    await page.waitForTimeout(400)
+
+    expect(await litPixels(page), 'the viewer ended up outside the room').toBeGreaterThan(2000)
+  })
+})
+
 test.describe('when an asset does not arrive', () => {
   /**
    * The whole scene lives inside one Suspense boundary — R3F's Canvas supplies
