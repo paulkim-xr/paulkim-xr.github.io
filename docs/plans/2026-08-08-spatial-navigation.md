@@ -2320,7 +2320,13 @@ export function Rig({ pose, pitch }: { pose: Pose; pitch: number }): null {
 }
 ```
 
-Note: `Rig` takes a plain `pose` prop, so the room reads its own domain state each frame and passes the current pose. Rooms already run a `useFrame`; the rig's runs after theirs because it is mounted below them in the tree.
+**Correction made during implementation.** `Rig` was specified as taking a plain `pose` prop. That cannot work: a room advances its state inside `useFrame` and never re-renders for it, so a pose passed as a prop would be the one computed at the room's last React render and would never change again. The rig therefore takes the domain, the state ref and `advance`, and does all three in one frame callback — which also removes any question about whether the rig's `useFrame` runs before or after the room's.
+
+```tsx
+<Rig domain={shell} state={here} advance={advance} />
+```
+
+The room must **not** also call `advance` in its own `useFrame`, or every frame of input is applied twice.
 
 - [ ] **Step 3: Verify it compiles**
 
@@ -2389,11 +2395,7 @@ In the `useFrame` callback, replace the block that reads
     camera.lookAt(lookingAt.copy(camera.position).add(gazeAt(here, tilt)))
 ```
 
-with just the advance and whatever the room still needs the position for:
-
-```tsx
-    advance(delta, performance.now())
-```
+with nothing. The rig advances the state and applies it; the room's own `useFrame` must not call `advance` as well.
 
 Keep `lamp.current?.position.copy(camera.position)` — the lamp follows the viewer and that is the room's business, not the rig's. Anything else in the loop that read `camera` should read `shell.poseOf(here.current).position` instead.
 
@@ -2404,7 +2406,7 @@ Delete the now-unused `lookingAt` scratch vector and the `useThree` camera subsc
 In the room's returned JSX, add as the first child:
 
 ```tsx
-<Rig pose={shell.poseOf(here.current)} pitch={shell.pitchOf(here.current)} />
+<Rig domain={shell} state={here} advance={advance} />
 ```
 
 - [ ] **Step 5: Delete the old hook**
@@ -2465,12 +2467,12 @@ const { state: here, advance } = useNavigation(corridor, [keysTechnique, pointer
 
 - [ ] **Step 3: Delete the camera code and mount the rig**
 
-Remove the `camera.position.set(...)`, `camera.up.set(...)` and `camera.lookAt(...)` block from the frame loop, leaving `advance(delta, performance.now())`.
+Remove the `camera.position.set(...)`, `camera.up.set(...)` and `camera.lookAt(...)` block from the frame loop. Do not call `advance` there — the rig does it.
 
 Add as the first child of the returned JSX:
 
 ```tsx
-<Rig pose={corridor.poseOf(here.current)} pitch={corridor.pitchOf(here.current)} />
+<Rig domain={corridor} state={here} advance={advance} />
 ```
 
 - [ ] **Step 4: Keep the string's own tap, and make it not fight the walk**
@@ -2540,8 +2542,8 @@ The highlight mirrors the pointed-at link into React state. Keep that, but read 
 ```tsx
 const [chosen, setChosen] = useState<string | undefined>(undefined)
 
-useFrame((_state, delta) => {
-  advance(delta, performance.now())
+useFrame(() => {
+  // No advance here: the rig owns it.
   const link = pointedAt(registry, here.current.journey)
   const name = link ? `${link.from}->${link.to}` : undefined
   // Only on change: this is React state read by the highlight, and setting it
@@ -2557,7 +2559,7 @@ Remove the `camera.position.set(...)`, `camera.up.set(...)`, the `aim`/`eased` l
 Add as the first child of the returned JSX:
 
 ```tsx
-<Rig pose={mountain.poseOf(here.current)} pitch={mountain.pitchOf(here.current)} />
+<Rig domain={mountain} state={here} advance={advance} />
 ```
 
 - [ ] **Step 5: Update the room's signage**

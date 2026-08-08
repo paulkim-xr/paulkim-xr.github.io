@@ -53,6 +53,14 @@ export default defineConfig({
         'src/lab/gravity/scatter.ts',
         'src/xr/useXrSupport.ts',
       ],
+      exclude: [
+        // A hook, not a module: it subscribes to the window and hands a frame
+        // of signal to the techniques, and testing it needs a renderer. It is
+        // only caught by the glob above because it ends in .ts while the rig
+        // beside it ends in .tsx. Covered by the end-to-end suite, like every
+        // other component here.
+        'src/space/useNavigation.ts',
+      ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },
   },
