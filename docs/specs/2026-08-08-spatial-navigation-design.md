@@ -79,14 +79,26 @@ the frame; discrete domains latch or threshold it. This is the decision that is
 expensive to reverse: if `advance` were an event the sphere could not use it,
 and if it were only a rate the graph and the carousel could not.
 
-| field | verb | kind |
-|---|---|---|
-| `advance` | movement | signed demand |
-| `strafe` | movement | signed demand |
-| `yaw` | orientation | signed demand |
-| `pitch` | orientation | signed demand |
-| `act` | interaction | edge |
-| `leave` | transition | edge |
+| field | verb | kind | unit |
+|---|---|---|---|
+| `advance` | movement | signed demand | normalised −1..1 |
+| `strafe` | movement | signed demand | normalised −1..1 |
+| `yaw` | orientation | signed demand | radians |
+| `pitch` | orientation | signed demand | radians |
+| `act` | interaction | edge | — |
+| `leave` | transition | edge | — |
+
+**Movement is normalised and orientation is absolute**, and the asymmetry is
+principled rather than a convenience. A step means radians of arc on a shell and
+metres of floor in a corridor, so its scale belongs to the domain, which
+multiplies the demand by its own pace and the frame. A turn means radians
+everywhere — rotation has one unit in every space. The existing `Rates` bears
+this out exactly: SVR and papercup disagree on `move` (0.85 against 3.4) and
+agree on `look` (1.1 in both).
+
+This is also what lets a held key and a drag sum coherently on the same axis.
+Both produce radians of yaw; a rate integrated over the frame and an impulse
+measured in pixels are the same kind of quantity by the time they are intents.
 
 Six fields, deliberately. A small vocabulary is cheap to widen and expensive to
 shrink, because every field added is one that every future domain must answer.
@@ -167,8 +179,13 @@ and drag on look.
 interface Domain<State> {
   initial(): State
   step(state: State, intents: Intents, seconds: number): State
-  poseOf(state: State): Pose
   needs: IntentField[]
+}
+
+/** A domain that also puts a body somewhere — one you move *through*. */
+interface Embodied<State> extends Domain<State> {
+  poseOf(state: State): Pose
+  pitchOf(state: State): number
 }
 ```
 
@@ -195,6 +212,13 @@ The four domains this spec ports:
 | open-ski-data | graph | latch: depart along the chosen edge | threshold: choose the next outgoing edge |
 | hub | Z/n | — | threshold: step the carousel |
 
+The hub is the one that is **not** `Embodied`, and the split earns itself
+there: a transformation changes the world while the viewer holds still, so the
+hub has no pose to give and mounts no rig. Its camera framing stays with
+`CameraRig`, which already sizes it against the window's aspect. What the hub
+takes from this design is its *input* — one meaning for the arrow keys — and
+nothing else.
+
 The vocabulary was not designed onto the mountain; the mountain's shipped
 controls fall out of it. "Left and right to choose, up to go" *is* thresholded
 `yaw` and latched `advance`.
@@ -206,16 +230,33 @@ rewritten.
 
 ### The rig
 
-A pose is where the viewer's feet and facing are, in the room's own render
-frame:
+A pose is where the viewer's body is, in the room's own render frame:
 
 ```ts
-type Pose = { position: Vector3; heading: number; pitch: number }
+type Pose = {
+  /** Where the eyes are. */
+  position: Vector3
+  /** Body orientation — facing and up together. Excludes head tilt. */
+  orientation: Quaternion
+}
 ```
 
-`heading` and `pitch` are kept as scalars rather than a quaternion because the
-rig treats them differently by mode, and a combined rotation would have to be
-decomposed again to do so.
+**Orientation must be a quaternion, not a heading scalar.** SVR settles it: the
+viewer stands on the inside of a shell, so up points at the centre and is
+therefore different at every point on the surface. `SphericalRoom.tsx` sets
+`camera.up` from `headUpAt(stance, tilt)` for exactly this reason, and it is why
+`Stance` is stored as an orientation rather than as two angles. A heading scalar
+can express the corridor and the mountain but not the sphere, and a pose type
+that fits three rooms out of four is not a pose type.
+
+Head tilt is delivered separately rather than folded in:
+
+```ts
+pitchOf(state: State): number
+```
+
+The rig applies it in flat mode and drops it in XR. Kept out of the quaternion
+so that dropping it is not a decomposition.
 
 One component. The room emits `poseOf(state)`; the rig applies it to the camera
 in flat mode and to `<XROrigin>` in XR. **A room that moves its viewer never
