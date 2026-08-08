@@ -1,5 +1,5 @@
-import { useFrame } from '@react-three/fiber'
-import { useMemo, type RefObject } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
+import { useEffect, useMemo, type RefObject } from 'react'
 import { Quaternion, Vector3 } from 'three'
 import type { Embodied } from './domain'
 
@@ -39,19 +39,38 @@ type RigProps<S> = {
  */
 export function Rig<S>({ domain, state, advance }: RigProps<S>): null {
   const tilt = useMemo(() => new Quaternion(), [])
+  const camera = useThree((three) => three.camera)
+
+  /**
+   * Hands the camera back the way it was found.
+   *
+   * A space where up is not world up leaves `camera.up` tipped over wherever
+   * the viewer stopped, and every `lookAt` in the app reads that vector — so
+   * without this the hub comes back rolled at whatever angle the room was left
+   * at, and stays there, because nothing else ever writes it.
+   *
+   * Here rather than in the room, because the rig is what dirtied it. A room
+   * that has to remember to tidy up after a thing it does not do is a room
+   * that will one day forget.
+   */
+  useEffect(() => {
+    return () => {
+      camera.up.set(0, 1, 0)
+    }
+  }, [camera])
 
   useFrame((_state, delta) => {
     advance(delta, performance.now())
 
     const pose = domain.poseOf(state.current)
-    camera(pose.position, pose.orientation, domain.pitchOf(state.current), tilt, _state.camera)
+    place(pose.position, pose.orientation, domain.pitchOf(state.current), tilt, _state.camera)
   })
 
   return null
 }
 
 /** Applied as its own function so the frame callback reads as one statement. */
-function camera(
+function place(
   position: Vector3,
   orientation: Quaternion,
   pitch: number,

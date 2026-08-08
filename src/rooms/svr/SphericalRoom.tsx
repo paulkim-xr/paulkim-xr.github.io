@@ -1,5 +1,5 @@
 import { useGLTF } from '@react-three/drei'
-import { useFrame, useThree } from '@react-three/fiber'
+import { useFrame } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   BackSide,
@@ -98,8 +98,6 @@ const AMBIENT_INTENSITY = 0.38
  * are upside down relative to where they started, and nothing has gone wrong.
  */
 export default function SphericalRoom({ room }: { room: Room }) {
-  const camera = useThree((state) => state.camera)
-
   // The room's own numbers, not the domain's: how big the shell is and how
   // tall the viewer is are facts about this space rather than about spheres.
   const walking = useMemo(() => shellDomain(SHELL_RADIUS, EYE_HEIGHT), [])
@@ -123,20 +121,6 @@ export default function SphericalRoom({ room }: { room: Room }) {
 
   /** The lamp the viewer carries, moved to the eye on every frame. */
   const lamp = useRef<PointLight>(null)
-
-  /**
-   * Hands the camera back the way it was found.
-   *
-   * Walking tips `camera.up` away from world up and leaves it wherever the
-   * viewer stopped. Every `lookAt` in the app reads that vector, so without
-   * this the hub comes back rolled over at whatever angle the room was left
-   * at — and stays there, because nothing else ever writes it.
-   */
-  useEffect(() => {
-    return () => {
-      camera.up.set(0, 1, 0)
-    }
-  }, [camera])
 
   // The rig advances the walk and puts the camera where it ends up, so all
   // this has left to do is carry the lamp along. One frame behind the camera
