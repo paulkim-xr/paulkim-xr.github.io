@@ -45,6 +45,9 @@ export default defineConfig({
         'src/rooms/openSkiData/travel.ts',
         'src/rooms/openSkiData/terrain.ts',
         'src/rooms/panels.ts',
+        // The navigation layer. Pure from the technique through to the pose;
+        // only the rig and the fixtures touch the scene.
+        'src/space/**/*.ts',
         'src/lab/circles/field.ts',
         'src/lab/gravity/nbody.ts',
         'src/lab/gravity/scatter.ts',
