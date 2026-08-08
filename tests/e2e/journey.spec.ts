@@ -662,3 +662,92 @@ test.describe('when an asset does not arrive', () => {
     expect(await litPixels(page), 'the canvas drew nothing at all').toBeGreaterThan(500)
   })
 })
+
+test.describe('the open-ski-data room', () => {
+  /**
+   * Waits until the view stops changing, and hands back the settled frame.
+   *
+   * Needed because "the picture changed" is not on its own evidence that the
+   * viewer went anywhere: labels arrive when their font finishes loading and
+   * the view eases onto its heading, so two frames taken seconds apart differ
+   * for reasons that have nothing to do with travel. Settling first makes a
+   * later difference mean something.
+   */
+  async function settled(page: Page): Promise<Buffer> {
+    let last = await page.screenshot()
+
+    for (let attempt = 0; attempt < 14; attempt++) {
+      await page.waitForTimeout(500)
+      const next = await page.screenshot()
+      if (next.equals(last)) return next
+      last = next
+    }
+    throw new Error('the view never came to rest')
+  }
+
+  async function enterTheRoom(page: Page) {
+    await page.goto('/p/open-ski-data')
+    await expect(page.locator('html')).toHaveAttribute('data-phase', 'inRoom', SETTLE)
+    await expect(page.locator('canvas')).toBeVisible()
+  }
+
+  test('opens into a room with something drawn in it', async ({ page }) => {
+    const errors = watchForErrors(page)
+    await enterTheRoom(page)
+    await page.waitForTimeout(3000)
+
+    expect(await litPixels(page), 'the room drew nothing').toBeGreaterThan(2000)
+    expect(errors).toEqual([])
+  })
+
+  test('standing at a place, the viewer is still', async ({ page }) => {
+    // The baseline the other two rest on. If the room never settles, a later
+    // "the picture changed" proves nothing at all.
+    await enterTheRoom(page)
+    const resting = await settled(page)
+
+    await page.waitForTimeout(700)
+    expect((await page.screenshot()).equals(resting), 'the room never stops moving').toBe(true)
+  })
+
+  test('looking round changes which way out is chosen', async ({ page }) => {
+    // The choice is shown by the view rather than by a cursor on a list, so
+    // stepping to the next one has to actually move the picture.
+    await enterTheRoom(page)
+    const before = await settled(page)
+
+    await page.keyboard.press('ArrowRight')
+    const after = await settled(page)
+
+    expect(after.equals(before), 'the choice did not move').toBe(false)
+  })
+
+  test('setting off actually carries the viewer along the link', async ({ page }) => {
+    test.slow()
+    // Travel, not a jump and not a still picture. Measured as motion — the view
+    // has to be changing *while* the ride is on — because a frame that merely
+    // differs from an earlier one proves only that something somewhere
+    // redrew.
+    await enterTheRoom(page)
+    const before = await settled(page)
+
+    await page.keyboard.press('ArrowUp')
+    const early = await page.screenshot()
+    await page.waitForTimeout(500)
+
+    expect((await page.screenshot()).equals(early), 'nobody set off').toBe(false)
+
+    const arrived = await settled(page)
+    expect(arrived.equals(before), 'the viewer ended up back where they started').toBe(false)
+  })
+
+  test('the room keeps the arrow keys to itself', async ({ page }) => {
+    await enterTheRoom(page)
+    await expect(page.locator('html')).toHaveAttribute('data-project', 'open-ski-data')
+
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+
+    await expect(page.locator('html')).toHaveAttribute('data-project', 'open-ski-data')
+  })
+})

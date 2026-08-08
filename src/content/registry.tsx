@@ -59,7 +59,12 @@ const bindings: Record<string, Pick<Room, 'shape' | 'accent' | 'scene' | 'ownsCa
     ownsCamera: true,
   },
   skiwatch: { shape: skiwatchShape, accent: '#7fb8ff', scene: exhibitScene() },
-  'open-ski-data': { shape: openSkiDataShape, accent: '#8ce0c0', scene: exhibitScene() },
+  'open-ski-data': {
+    shape: openSkiDataShape,
+    accent: '#8ce0c0',
+    scene: lazyScene(() => import('../rooms/openSkiData/MountainRoom')),
+    ownsCamera: true,
+  },
   'project-beta': { shape: projectBetaShape, accent: '#ffb27f', scene: exhibitScene() },
   'cli-p2p-boardgame': { shape: boardgameShape, accent: '#c79aff', scene: exhibitScene() },
   svr: {
