@@ -24,3 +24,4 @@ playwright-report/
 .papercup.mjs
 .pcprobe.mjs
 .osd.mjs
+.svrcheck.mjs

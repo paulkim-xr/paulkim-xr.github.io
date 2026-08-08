@@ -15,10 +15,13 @@ import { Boundary } from '../../lib/Boundary'
 import { CanvasText } from '../../lib/CanvasText'
 import { LinkButton } from '../../lib/LinkButton'
 import { shellGeometry } from '../../shape/shapes/svr'
-import { gazeAt, headUpAt } from './gaze'
 import { tintPanels } from '../panels'
 import { eyeAt, initialStance, upAt, walk } from './walk'
-import { useFirstPerson } from './useFirstPerson'
+import { shellDomain } from '../../space/domains/shell'
+import { keysTechnique } from '../../space/techniques/keys'
+import { pointerTechnique } from '../../space/techniques/pointer'
+import { useNavigation } from '../../space/useNavigation'
+import { Rig } from '../../space/Rig'
 
 const SKULL_MODEL = '/models/skull.glb'
 
@@ -96,10 +99,11 @@ const AMBIENT_INTENSITY = 0.38
  */
 export default function SphericalRoom({ room }: { room: Room }) {
   const camera = useThree((state) => state.camera)
-  const { stance, pitch, advance } = useFirstPerson()
 
-  /** Where the camera is aimed, held across frames rather than allocated in one. */
-  const lookingAt = useMemo(() => new Vector3(), [])
+  // The room's own numbers, not the domain's: how big the shell is and how
+  // tall the viewer is are facts about this space rather than about spheres.
+  const walking = useMemo(() => shellDomain(SHELL_RADIUS, EYE_HEIGHT), [])
+  const { state: here, advance } = useNavigation(walking, [keysTechnique, pointerTechnique])
 
   const shell = useMemo(() => {
     const geometry = shellGeometry(SHELL_RADIUS, SHELL_DETAIL)
@@ -134,23 +138,17 @@ export default function SphericalRoom({ room }: { room: Room }) {
     }
   }, [camera])
 
-  useFrame((_state, delta) => {
-    advance(delta)
-    const here = stance.current
-    const tilt = pitch.current
-
-    camera.position.copy(eyeAt(here, SHELL_RADIUS - EYE_HEIGHT))
-    // Aimed a step along the gaze rather than at a fixed point, because there
-    // is no fixed point to aim at: where the viewer is looking is a direction
-    // they choose, and only one value of it happens to pass through the object.
-    camera.up.copy(headUpAt(here, tilt))
-    camera.lookAt(lookingAt.copy(camera.position).add(gazeAt(here, tilt)))
-
-    lamp.current?.position.copy(camera.position)
+  // The rig advances the walk and puts the camera where it ends up, so all
+  // this has left to do is carry the lamp along. One frame behind the camera
+  // at worst, which for a light that follows the viewer is not visible.
+  useFrame(() => {
+    lamp.current?.position.copy(walking.poseOf(here.current).position)
   })
 
   return (
     <group>
+      <Rig domain={walking} state={here} advance={advance} />
+
       <ambientLight intensity={AMBIENT_INTENSITY} color={SHELL_COLOUR} />
       <pointLight
         ref={lamp}
