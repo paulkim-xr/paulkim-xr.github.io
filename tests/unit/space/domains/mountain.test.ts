@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { Vector3 } from 'three'
 import { NO_INTENTS, type Intents } from '../../../../src/space/intents'
 import {
   CHOICE_THRESHOLD,
@@ -131,6 +132,30 @@ describe('the pose it hands the rig', () => {
     const settled = hold(stepped, NO_INTENTS, 120)
 
     expect(stepped.aim.distanceTo(settled.aim)).toBeGreaterThan(0.01)
+  })
+
+  test('a small turn looks about without changing the choice', () => {
+    // Turning and choosing are the same gesture: the view is aimed along the
+    // graph's heading turned by whatever has been banked, so a drag too small
+    // to step still moves the picture. Without this the room would have no
+    // free look at all, and you could not see the mountain from beside it.
+    const nudged = mountain.step(mountain.initial(), asking({ yaw: CHOICE_THRESHOLD / 2 }), 1 / 60)
+
+    expect(nudged.journey).toEqual(mountain.initial().journey)
+    expect(
+      new Vector3(0, 0, -1).applyQuaternion(mountain.poseOf(nudged).orientation).angleTo(
+        new Vector3(0, 0, -1).applyQuaternion(mountain.poseOf(mountain.initial()).orientation),
+      ),
+    ).toBeGreaterThan(0.05)
+  })
+
+  test('a turn taken while riding only looks, and cannot bank up', () => {
+    // A long ride spent dragging would otherwise spend itself stepping through
+    // the choices the moment the viewer arrived.
+    let state = mountain.step(mountain.initial(), asking({ advance: 1 }), 1 / 60)
+    state = hold(state, asking({ yaw: CHOICE_THRESHOLD }), 20)
+
+    expect(Math.abs(state.turned)).toBeLessThanOrEqual(CHOICE_THRESHOLD)
   })
 
   test('it never modifies the state it was given', () => {

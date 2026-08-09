@@ -61,8 +61,12 @@ export const keysTechnique: Technique<null> = {
 
     // Lower-cased because `event.key` for a letter is the letter typed, so the
     // same physical key arrives as `w` or `W` depending on shift and caps lock.
-    const keys = new Set([...signals.keys].map((key) => key.toLowerCase()))
     const struck = new Set([...signals.struck].map((key) => key.toLowerCase()))
+    // A key struck counts as held for the frame it was struck in, even if it
+    // was also released before that frame came round. A quick tap is otherwise
+    // simply lost — you press to set off and nothing happens — and the slower
+    // the renderer, the longer a tap has to be to survive.
+    const keys = new Set([...[...signals.keys].map((key) => key.toLowerCase()), ...struck])
     const turning = LOOK_PER_SECOND * seconds
 
     const intents: Intents = {

@@ -32,3 +32,4 @@ playwright-report/
 .clock.mjs
 .probe2.mjs
 .probe3.mjs
+.osdcheck.mjs

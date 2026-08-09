@@ -1,4 +1,4 @@
-import { useFrame, useThree } from '@react-three/fiber'
+import { useFrame } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   BufferGeometry,
@@ -6,17 +6,20 @@ import {
   DoubleSide,
   Float32BufferAttribute,
   TubeGeometry,
-  Vector3,
   type LineSegments,
 } from 'three'
 import type { Room } from '../../content/registry'
 import { CanvasText } from '../../lib/CanvasText'
 import { LinkButton } from '../../lib/LinkButton'
-import { lookFrom } from '../controls'
 import { requirePlace, unreachable } from './graph'
 import { ARRIVAL_PLACE, resort, type Link, type PlaceKind, type Resort } from './resort'
 import { contourRings, curveOf, mastOf, segmentsOf, slopeRibbon } from './terrain'
-import { advance, depart, focusOf, look, pointedAt, positionOf, startAt } from './travel'
+import { pointedAt } from './travel'
+import { mountainDomain } from '../../space/domains/mountain'
+import { keysTechnique } from '../../space/techniques/keys'
+import { pointerTechnique } from '../../space/techniques/pointer'
+import { useNavigation } from '../../space/useNavigation'
+import { Rig } from '../../space/Rig'
 
 /** How far above the graph the viewer's eye sits. */
 const EYE_HEIGHT = 1.7
@@ -25,9 +28,6 @@ const MAST_DROP = 1.6
 
 const LIFT_RADIUS = 0.055
 const SLOPE_WIDTH = 1.15
-
-/** How fast the view eases onto a new heading, per second. */
-const EASE = 4.5
 
 /** How far below the graph's own heading the room opens. */
 const ARRIVAL_TILT = -0.24
@@ -65,96 +65,23 @@ const PLACE_SIZE: Record<PlaceKind, number> = {
  * holes are visible, and filling them is an invitation rather than an error.
  */
 export default function MountainRoom({ room }: { room: Room }) {
-  const camera = useThree((state) => state.camera)
   const registry = useMemo(() => resort(), [])
 
-  const journey = useRef(startAt(ARRIVAL_PLACE))
+  const travelling = useMemo(
+    () => mountainDomain(registry, ARRIVAL_PLACE, EYE_HEIGHT, ARRIVAL_TILT),
+    [registry],
+  )
+  const { state: here, advance } = useNavigation(travelling, [keysTechnique, pointerTechnique])
+
   /** The chosen link's name, mirrored into React so the highlight can re-render. */
   const [chosen, setChosen] = useState<string | null>(null)
-  /**
-   * How far the viewer has turned their head off the heading the graph gives.
-   *
-   * Starts tilted down a little. The view is aimed along whatever link is
-   * chosen, and from the base that is a lift going up the hill — which frames
-   * the mountain beautifully and leaves the board at the bottom of it out of
-   * shot entirely.
-   */
-  const looking = useRef({ yaw: 0, pitch: ARRIVAL_TILT })
 
-  /** The heading the camera is easing towards, held across frames. */
-  const aim = useMemo(() => new Vector3(), [])
-  const eased = useRef<Vector3 | null>(null)
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase()
-      if (key === 'arrowleft' || key === 'a') journey.current = look(registry, journey.current, -1)
-      if (key === 'arrowright' || key === 'd') journey.current = look(registry, journey.current, 1)
-      if (key === 'arrowup' || key === 'w' || key === 'enter' || key === ' ') {
-        journey.current = depart(registry, journey.current)
-      }
-    }
-
-    let last: { x: number; y: number } | null = null
-    const down = (event: PointerEvent) => {
-      last = { x: event.clientX, y: event.clientY }
-    }
-    const move = (event: PointerEvent) => {
-      if (!last) return
-      const turned = lookFrom(event.clientX - last.x, event.clientY - last.y)
-      last = { x: event.clientX, y: event.clientY }
-      looking.current = {
-        yaw: looking.current.yaw + turned.turned,
-        // Clamped well short of straight up: the view here is aimed along the
-        // graph, and a gaze that reached the pole would have nothing left to
-        // decide which way round the picture sits.
-        pitch: Math.max(-1.1, Math.min(1.1, looking.current.pitch + turned.tilted)),
-      }
-    }
-    const up = () => {
-      last = null
-    }
-
-    window.addEventListener('keydown', onKey)
-    window.addEventListener('pointerdown', down)
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', up)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('pointerdown', down)
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', up)
-    }
-  }, [registry])
-
-  useFrame((_state, delta) => {
-    journey.current = advance(registry, journey.current, delta)
-
-    const feet = positionOf(registry, journey.current)
-    camera.position.set(feet.x, feet.y + EYE_HEIGHT, feet.z)
-    camera.up.set(0, 1, 0)
-
-    // Where the graph says to look, eased rather than snapped: stepping round
-    // the choices at a junction would otherwise cut the view from one line to
-    // the next, and a cut reads as a fault rather than as turning your head.
-    aim.copy(focusOf(registry, journey.current)).sub(camera.position).normalize()
-    if (!eased.current) eased.current = aim.clone()
-    eased.current.lerp(aim, Math.min(1, EASE * delta)).normalize()
-
-    const heading = eased.current.clone()
-    heading.applyAxisAngle(UP, looking.current.yaw)
-    const right = new Vector3().crossVectors(heading, UP).normalize()
-    heading.applyAxisAngle(right, looking.current.pitch)
-
-    camera.lookAt(
-      camera.position.x + heading.x,
-      camera.position.y + heading.y,
-      camera.position.z + heading.z,
-    )
-
-    const pointing = pointedAt(registry, journey.current)?.name ?? null
+  // The rig advances the journey and puts the camera where it ends up. All
+  // this has left to do is tell React which link is being pointed at, and only
+  // when it changes — setting state every frame would re-render the mountain
+  // sixty times a second.
+  useFrame(() => {
+    const pointing = pointedAt(registry, here.current.journey)?.name ?? null
     if (pointing !== chosen) setChosen(pointing)
   })
 
@@ -183,6 +110,8 @@ export default function MountainRoom({ room }: { room: Room }) {
 
   return (
     <group>
+      <Rig domain={travelling} state={here} advance={advance} />
+
       <ambientLight intensity={1.4} />
       <pointLight position={[6, 18, 10]} intensity={120} distance={60} decay={1.4} />
 
@@ -216,8 +145,6 @@ export default function MountainRoom({ room }: { room: Room }) {
     </group>
   )
 }
-
-const UP = new Vector3(0, 1, 0)
 
 /** One lift, run or gap, drawn as what it is. */
 function LinkLine({ registry, link, chosen }: { registry: Resort; link: Link; chosen: boolean }) {
@@ -384,7 +311,7 @@ function TrailBoard({
       </CanvasText>
 
       <CanvasText position={[0, -0.84, 0.01]} fontSize={0.075} anchorX="center" color="#767e91">
-        left and right to choose · up to go · drag to look
+        drag or arrows to look round · hold or up to go
       </CanvasText>
     </group>
   )

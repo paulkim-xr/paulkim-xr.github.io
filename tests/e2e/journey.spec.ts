@@ -726,10 +726,17 @@ test.describe('the open-ski-data room', () => {
   test('looking round changes which way out is chosen', async ({ page }) => {
     // The choice is shown by the view rather than by a cursor on a list, so
     // stepping to the next one has to actually move the picture.
+    //
+    // Held rather than tapped. Turning and choosing are one gesture here: the
+    // view swings with the key and the choice comes round to whatever it has
+    // turned to face, which is what lets a finger do it as well as a keyboard.
+    // A tap turns you about a degree, which is a look and not a decision.
     await enterTheRoom(page)
     const before = await settled(page)
 
-    await page.keyboard.press('ArrowRight')
+    await page.keyboard.down('ArrowRight')
+    await page.waitForTimeout(600)
+    await page.keyboard.up('ArrowRight')
     const after = await settled(page)
 
     expect(after.equals(before), 'the choice did not move').toBe(false)

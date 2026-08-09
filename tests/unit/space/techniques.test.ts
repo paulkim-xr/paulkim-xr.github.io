@@ -92,6 +92,19 @@ describe('the keyboard', () => {
     expect(intents.act).toBe(true)
   })
 
+  test('a tap is not lost for a demand either, not just for an edge', () => {
+    // Pressing up to set off and having nothing happen is the same defect in
+    // the other half of the vocabulary. The slower the renderer, the longer a
+    // tap would have to be to survive being sampled.
+    const { intents } = keysTechnique.reduce(
+      null,
+      signals({ keys: new Set(), struck: new Set(['arrowup']) }),
+      FRAME,
+    )
+
+    expect(intents.advance).toBe(1)
+  })
+
   test('a held movement key keeps asking, because movement is not an edge', () => {
     const held = signals({ keys: new Set(['w']), struck: new Set() })
     expect(keysTechnique.reduce(null, held, FRAME).intents.advance).toBe(1)

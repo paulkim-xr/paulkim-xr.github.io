@@ -36,7 +36,15 @@ export type MountainState = {
   /** The direction the view has settled to, which lags the journey's own. */
   aim: Vector3
   pitch: number
-  /** Turn banked up but not yet spent on a step through the choices. */
+  /**
+   * Turn banked up but not yet spent on a step through the choices.
+   *
+   * Also the free look: the view is aimed along the graph's own heading turned
+   * by this much, so a small drag looks about the mountain and a larger one
+   * carries the choice round to whatever it has turned to face. Turning and
+   * choosing are the same gesture here, which is what the room already said
+   * they were — the chosen link is shown by the view rather than by a cursor.
+   */
   turned: number
 }
 
@@ -90,7 +98,11 @@ export function mountainDomain(
         }
         if (intents.advance >= DEPART_THRESHOLD) journey = depart(registry, journey)
       } else {
-        turned = 0
+        // Riding, a turn is only a look: you cannot get off a chairlift
+        // halfway. Held inside the free-look range rather than banked, or a
+        // long ride spent dragging would spend itself stepping through the
+        // choices the moment the viewer arrived.
+        turned = Math.max(-CHOICE_THRESHOLD, Math.min(CHOICE_THRESHOLD, turned))
         journey = advanceJourney(registry, journey, seconds)
       }
 
@@ -107,9 +119,15 @@ export function mountainDomain(
 
     poseOf: (state: MountainState): Pose => {
       const feet = positionOf(registry, state.journey)
+      // The graph's own heading, turned by whatever the viewer has banked but
+      // not yet spent. Eased rather than snapped, because stepping round the
+      // choices would otherwise cut the view from one line to the next, and a
+      // cut reads as a fault rather than as turning your head.
+      const heading = state.aim.clone().applyAxisAngle(WORLD_UP, state.turned)
+
       return {
         position: new Vector3(feet.x, feet.y + eyeHeight, feet.z),
-        orientation: orientationOf(state.aim, WORLD_UP),
+        orientation: orientationOf(heading, WORLD_UP),
       }
     },
 
