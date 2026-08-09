@@ -83,8 +83,14 @@ export function onPress(state: GestureState, press: Press): GestureOut {
     case 'move': {
       if (!state.origin || !state.last) return out(state)
 
+      // Travelling past the slop makes this a look, whatever it had become —
+      // including a walk. The two promotions are a race: a drag slower than
+      // the slop per dwell crosses the time threshold before the distance one,
+      // so a careful drag would otherwise be caught as a walk and, with no way
+      // back out, would never turn the viewer at all. That is not a corner
+      // case; it is what looking slowly around a room feels like.
       const role =
-        state.role === 'undecided' &&
+        state.role !== 'look' &&
         Math.hypot(press.x - state.origin.x, press.y - state.origin.y) > SLOP_PX
           ? 'look'
           : state.role

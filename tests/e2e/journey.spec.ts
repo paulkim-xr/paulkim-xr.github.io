@@ -598,11 +598,24 @@ test.describe('the papercup room', () => {
       await page.waitForTimeout(240)
     }
 
-    const quietest = Math.min(...seen)
-    const brightest = Math.max(...seen)
+    expect(Math.max(...seen) / Math.min(...seen), 'nothing crossed the room').toBeGreaterThan(1.4)
 
-    expect(brightest / quietest, 'nothing crossed the room').toBeGreaterThan(1.4)
-    expect(seen.at(-1), 'the room never went quiet again').toBeLessThan(brightest * 0.9)
+    /**
+     * Somewhere in the trace: quiet, then bright, then quiet again.
+     *
+     * Asked of the whole sequence rather than of its last sample. The room
+     * places a call of its own every seven seconds, and this loop takes far
+     * longer than the 3.4s its timeouts suggest — a full-frame read on a
+     * software renderer costs more than the interval — so whether the last
+     * sample happens to catch a fresh call is a matter of when the sampling
+     * started. Asserting on it made this test fail about as often as it
+     * passed, for reasons that had nothing to do with the room.
+     */
+    const rose = seen.findIndex((value, at) => at > 0 && value > Math.min(...seen) * 1.4)
+    const fellAfter = seen.slice(rose + 1).some((value) => value < seen[rose] * 0.9)
+
+    expect(rose, 'the room never brightened after it was quiet').toBeGreaterThan(0)
+    expect(fellAfter, 'the call never passed — the room stayed lit').toBe(true)
   })
 
   test('the room keeps the arrow keys to itself', async ({ page }) => {

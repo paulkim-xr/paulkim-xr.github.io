@@ -29,6 +29,24 @@ function axis(
  * something different in every space and the domain scales it, while a turn
  * means radians everywhere.
  */
+const ACT_KEYS = [' ', 'enter']
+const LEAVE_KEYS = ['escape']
+
+/**
+ * The bindings a first-person walker has always had.
+ *
+ * Arrows and WASD to go and to turn, page up and down for the head, space to
+ * act and escape to leave — so a room's one indispensable move is reachable
+ * without a mouse.
+ *
+ * Movement comes out normalised and turning comes out in radians: a step means
+ * something different in every space and the domain scales it, while a turn
+ * means radians everywhere.
+ *
+ * Demands read the keys held; edges read the keys struck. Reading a held key
+ * for an edge would fire it once a frame, and sampling for one would lose a
+ * tap that began and ended between two frames.
+ */
 export const keysTechnique: Technique<null> = {
   id: 'keys',
   produces: ['advance', 'strafe', 'yaw', 'pitch', 'act', 'leave'],
@@ -37,11 +55,14 @@ export const keysTechnique: Technique<null> = {
   initial: () => null,
 
   reduce(state: null, signals: Signals, seconds: number) {
-    if (signals.keys.size === 0) return { state, intents: NO_INTENTS }
+    if (signals.keys.size === 0 && signals.struck.size === 0) {
+      return { state, intents: NO_INTENTS }
+    }
 
     // Lower-cased because `event.key` for a letter is the letter typed, so the
     // same physical key arrives as `w` or `W` depending on shift and caps lock.
     const keys = new Set([...signals.keys].map((key) => key.toLowerCase()))
+    const struck = new Set([...signals.struck].map((key) => key.toLowerCase()))
     const turning = LOOK_PER_SECOND * seconds
 
     const intents: Intents = {
@@ -49,8 +70,8 @@ export const keysTechnique: Technique<null> = {
       strafe: axis(keys, ['d'], ['a']),
       yaw: axis(keys, ['arrowright'], ['arrowleft']) * turning,
       pitch: axis(keys, ['pageup'], ['pagedown']) * turning,
-      act: anyOf(keys, [' ', 'enter']),
-      leave: keys.has('escape'),
+      act: anyOf(struck, ACT_KEYS),
+      leave: anyOf(struck, LEAVE_KEYS),
     }
 
     return { state, intents }

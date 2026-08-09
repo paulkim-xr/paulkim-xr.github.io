@@ -13,8 +13,12 @@ import type { Room } from '../../content/registry'
 import { CanvasText } from '../../lib/CanvasText'
 import { LinkButton } from '../../lib/LinkButton'
 import { corridorGeometry } from './corridor'
-import { facingOf, type Bounds } from './stroll'
-import { useCorridorWalk } from './useCorridorWalk'
+import type { Bounds } from './stroll'
+import { corridorDomain } from '../../space/domains/corridor'
+import { keysTechnique } from '../../space/techniques/keys'
+import { pointerTechnique } from '../../space/techniques/pointer'
+import { useNavigation } from '../../space/useNavigation'
+import { Rig } from '../../space/Rig'
 import {
   AMPLITUDE,
   crossingTime,
@@ -81,9 +85,6 @@ const ARRIVAL = { x: -(ROOM.alongString - 2.5), z: 1.2, heading: -0.1 }
  */
 const BOARD_Y = 3.6
 
-/** How far a press may wander and still count as a tap rather than a drag. */
-const TAP_SLOP = 6
-
 /** How long the far end takes to answer, in seconds. */
 const THINKING = 0.9
 /** How long the room waits before placing a call of its own. */
@@ -114,9 +115,16 @@ const CUP_COLOUR = '#cbc6bb'
  * and a string that terminates in your own two cups.
  */
 export default function StringRoom({ room }: { room: Room }) {
-  const camera = useThree((state) => state.camera)
   const clock = useThree((state) => state.clock)
-  const { stroll, pitch, advance } = useCorridorWalk(WALKABLE, ARRIVAL)
+
+  const walking = useMemo(() => corridorDomain(WALKABLE, ARRIVAL, EYE_HEIGHT), [])
+  const { state: here, advance } = useNavigation(
+    walking,
+    [keysTechnique, pointerTechnique],
+    (intents) => {
+      if (intents.act) pickUp(clock.getElapsedTime())
+    },
+  )
 
   const walls = useMemo(() => corridorGeometry(ROOM, HEIGHT), [])
   useEffect(() => () => walls.dispose(), [walls])
@@ -160,67 +168,28 @@ export default function StringRoom({ room }: { room: Room }) {
   /** The light the viewer carries, so the floor they walk has a surface to it. */
   const lamp = useRef<PointLight>(null)
 
-  useEffect(() => {
-    /**
-     * Picking up: send something down the string.
-     *
-     * On the pointer as well as the keyboard: a phone has no space bar, and
-     * the room's one interaction cannot be reachable only from a desk.
-     * Dragging is looking around, so a call goes on the key, or on a tap that
-     * never turned into a drag.
-     */
-    const pickUp = (now: number) => {
-      const call = calls.current
-      call.pulses = [...call.pulses, { firedAt: now, direction: 1 }]
-      call.replyAt = now + crossingTime(SPAN) + THINKING
-      call.nextIdle = now + IDLE_GAP
-    }
+  /**
+   * Picking up: send something down the string.
+   *
+   * Driven by the `act` intent rather than by listeners of the room's own, so
+   * the tap that fires it is the same tap the navigation layer has already
+   * decided was not a drag and not a walk. The room used to watch the pointer
+   * itself and count any press that had not travelled far — which, now that a
+   * press held still walks you down the corridor, would have rung the string
+   * every time you stopped walking.
+   */
+  const pickUp = (now: number) => {
+    const call = calls.current
+    call.pulses = [...call.pulses, { firedAt: now, direction: 1 }]
+    call.replyAt = now + crossingTime(SPAN) + THINKING
+    call.nextIdle = now + IDLE_GAP
+  }
 
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === ' ' || event.key === 'Enter') pickUp(clock.getElapsedTime())
-    }
-
-    // A tap is a press that did not become a drag. Measured against where it
-    // started rather than frame to frame, so a slow crawl across the screen is
-    // still a drag by the time it is let go.
-    let pressedAt: { x: number; y: number } | null = null
-    const onDown = (event: PointerEvent) => {
-      pressedAt = { x: event.clientX, y: event.clientY }
-    }
-    const onUp = (event: PointerEvent) => {
-      if (!pressedAt) return
-      const moved = Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y)
-      pressedAt = null
-      if (moved <= TAP_SLOP) pickUp(clock.getElapsedTime())
-    }
-
-    window.addEventListener('keydown', onKey)
-    window.addEventListener('pointerdown', onDown)
-    window.addEventListener('pointerup', onUp)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('pointerdown', onDown)
-      window.removeEventListener('pointerup', onUp)
-    }
-  }, [clock])
-
-  useFrame((_state, delta) => {
-    advance(delta)
+  // The rig advances the walk and puts the camera where it ends up. What is
+  // left here is the room's own life: the string, the pulses on it, and the
+  // lamp the viewer carries.
+  useFrame(() => {
     const now = clock.getElapsedTime()
-    const here = stroll.current
-
-    camera.position.set(here.position.x, EYE_HEIGHT, here.position.z)
-    camera.up.set(0, 1, 0)
-    // Tilted by rotating the heading out of the floor plane rather than by
-    // giving it a height of tan(pitch): the pitch clamps at straight up, where
-    // a tangent is infinite and the view would blow up at exactly its limit.
-    const tilt = pitch.current
-    const along = facingOf(here).multiplyScalar(Math.cos(tilt))
-    camera.lookAt(
-      camera.position.x + along.x,
-      camera.position.y + Math.sin(tilt),
-      camera.position.z + along.z,
-    )
 
     const call = calls.current
     call.pulses = stillTravelling(call.pulses, now, SPAN)
@@ -248,13 +217,15 @@ export default function StringRoom({ room }: { room: Room }) {
       if (pulse) light.position.set(headAt(pulse, now, SPAN), STRING_Y, 0)
     })
 
-    lamp.current?.position.copy(camera.position)
+    lamp.current?.position.copy(walking.poseOf(here.current).position)
   })
 
   const links = room.links
 
   return (
     <group>
+      <Rig domain={walking} state={here} advance={advance} />
+
       <ambientLight intensity={AMBIENT_INTENSITY} color="#8a93a8" />
       {/* A lamp at the eye, the same as the sphere room next door and for the
           same reason: a corridor lit evenly end to end is a picture of a

@@ -25,3 +25,10 @@ playwright-report/
 .pcprobe.mjs
 .osd.mjs
 .svrcheck.mjs
+.pcdiag.mjs
+.pccheck.mjs
+.pctap.mjs
+.pcdrag.mjs
+.clock.mjs
+.probe2.mjs
+.probe3.mjs

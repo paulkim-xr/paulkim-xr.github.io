@@ -7,9 +7,16 @@ import { LOOK_PER_PIXEL, pointerTechnique } from '../../../src/space/techniques/
 
 const signals = (part: Partial<Signals> = {}): Signals => ({
   keys: new Set<string>(),
+  struck: new Set<string>(),
   presses: [],
   now: 0,
   ...part,
+})
+
+/** A key freshly struck: down this frame, and therefore also held. */
+const striking = (...names: string[]): Partial<Signals> => ({
+  keys: new Set(names),
+  struck: new Set(names),
 })
 
 const FRAME = 1 / 60
@@ -52,13 +59,42 @@ describe('the keyboard', () => {
     expect(intents.advance).toBe(1)
   })
 
-  test('escape asks to leave and space acts', () => {
-    expect(
-      keysTechnique.reduce(null, signals({ keys: new Set(['escape']) }), FRAME).intents.leave,
-    ).toBe(true)
-    expect(keysTechnique.reduce(null, signals({ keys: new Set([' ']) }), FRAME).intents.act).toBe(
-      true,
+  test('escape asks to leave and space acts, when freshly struck', () => {
+    expect(keysTechnique.reduce(null, signals(striking('escape')), FRAME).intents.leave).toBe(true)
+    expect(keysTechnique.reduce(null, signals(striking(' ')), FRAME).intents.act).toBe(true)
+  })
+
+  test('a held space bar acts once, not once a frame', () => {
+    // `act` is an edge, so it reads the keys struck rather than the keys held.
+    // Resting a finger on the space bar would otherwise fire the room's
+    // interaction sixty times a second — and a browser repeats keydown while a
+    // key is held, so watching the event alone is not enough either.
+    const struck = keysTechnique.reduce(null, signals(striking(' ')), FRAME)
+    const stillHeld = keysTechnique.reduce(
+      null,
+      signals({ keys: new Set([' ']), struck: new Set() }),
+      FRAME,
     )
+
+    expect(struck.intents.act).toBe(true)
+    expect(stillHeld.intents.act).toBe(false)
+  })
+
+  test('a tap that begins and ends between two frames is not lost', () => {
+    // The key is gone by the time anything samples what is held. Reading only
+    // `keys` would drop it, which on this room means the string never rings.
+    const { intents } = keysTechnique.reduce(
+      null,
+      signals({ keys: new Set(), struck: new Set([' ']) }),
+      FRAME,
+    )
+
+    expect(intents.act).toBe(true)
+  })
+
+  test('a held movement key keeps asking, because movement is not an edge', () => {
+    const held = signals({ keys: new Set(['w']), struck: new Set() })
+    expect(keysTechnique.reduce(null, held, FRAME).intents.advance).toBe(1)
   })
 
   test('nothing held asks for nothing', () => {

@@ -90,6 +90,24 @@ describe('a press that stays put', () => {
     expect(frames[1].dragged).toEqual({ dx: 0, dy: 0 })
   })
 
+  test('a drag that starts after the dwell takes over from the walk', () => {
+    // The two promotions are a race, and time can win it: a drag slower than
+    // the slop per dwell is a walk by the time it has travelled far enough to
+    // be a look. Without this the press stays a walk for good and the viewer
+    // can never turn — which is exactly what looking slowly around a room
+    // does, so it is not a corner case.
+    const frames = play([
+      { kind: 'down', x: 0, y: 0, at: 0 },
+      { kind: 'tick', at: DWELL_MS + 1 },
+      { kind: 'move', x: SLOP_PX + 30, y: 0, at: DWELL_MS + 40 },
+      { kind: 'tick', at: DWELL_MS + 60 },
+    ])
+
+    expect(frames[1].advancing, 'it should have started walking').toBe(true)
+    expect(frames[2].dragged.dx, 'the drag should be looking').toBe(SLOP_PX + 30)
+    expect(frames[3].advancing, 'it should have stopped walking').toBe(false)
+  })
+
   test('does not act when it is finally released', () => {
     // It walked. A walk that also opens something on release would mean you
     // cannot cross a room without pressing whatever you stopped in front of.
