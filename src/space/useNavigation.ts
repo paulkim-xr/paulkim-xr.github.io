@@ -16,6 +16,7 @@ function useSignals(): { drain: (now: number) => Signals } {
   const keys = useRef(new Set<string>())
   const struck = useRef(new Set<string>())
   const presses = useRef<Press[]>([])
+  const wheel = useRef(0)
 
   useEffect(() => {
     const down = (event: PointerEvent) =>
@@ -36,6 +37,10 @@ function useSignals(): { drain: (now: number) => Signals } {
     const cancel = (event: PointerEvent) =>
       presses.current.push({ kind: 'cancel', at: event.timeStamp })
 
+    const wheeled = (event: WheelEvent) => {
+      wheel.current += event.deltaY
+    }
+
     const keyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase()
       // Held keys repeat their keydown. Only a key that was not already down
@@ -51,6 +56,7 @@ function useSignals(): { drain: (now: number) => Signals } {
       presses.current.push({ kind: 'cancel', at: performance.now() })
     }
 
+    window.addEventListener('wheel', wheeled)
     window.addEventListener('pointerdown', down)
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
@@ -60,6 +66,7 @@ function useSignals(): { drain: (now: number) => Signals } {
     window.addEventListener('blur', blur)
 
     return () => {
+      window.removeEventListener('wheel', wheeled)
       window.removeEventListener('pointerdown', down)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
@@ -81,8 +88,10 @@ function useSignals(): { drain: (now: number) => Signals } {
     const held = new Set(keys.current)
     const fresh = struck.current
     struck.current = new Set<string>()
+    const turned = wheel.current
+    wheel.current = 0
 
-    return { keys: held, struck: fresh, presses: collected, now }
+    return { keys: held, struck: fresh, presses: collected, wheel: turned, now }
   }
 
   return { drain }

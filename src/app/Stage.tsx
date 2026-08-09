@@ -57,11 +57,10 @@ function CameraRig({ roomFraming, enabled }: { roomFraming: boolean; enabled: bo
 type StageProps = {
   activeIndex: number
   transition: Transition
-  onStep: (delta: number) => void
   xrMode: boolean
 }
 
-export function Stage({ activeIndex, transition, onStep, xrMode }: StageProps) {
+export function Stage({ activeIndex, transition, xrMode }: StageProps) {
   const { state } = transition
   const room = state.target ? getRoom(state.target) : undefined
   const Scene = room?.scene
@@ -90,12 +89,6 @@ export function Stage({ activeIndex, transition, onStep, xrMode }: StageProps) {
         <MorphHub
           rooms={rooms}
           activeIndex={activeIndex}
-          onStep={onStep}
-          onSelect={transition.select}
-          // Not `isLocked`, which lets the focus beat through: by then the shape
-          // has been chosen and is turning white, and a step during it would
-          // start a morph out of the very posture being frozen.
-          interactive={state.phase === 'browsing'}
           phase={state.phase}
           direction={state.direction}
         />

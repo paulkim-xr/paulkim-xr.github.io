@@ -51,94 +51,13 @@ const OUTLINE = new Color('#8b91a3')
 
 const IDLE_SPIN = 0.22
 const SHAPE_SCALE = 1.15
-/** Radius of the click target. Comfortably larger than any shape's silhouette. */
-const HIT_RADIUS = 1.05
-/** Horizontal pointer travel, in pixels, that counts as one step. */
-const DRAG_STEP_PX = 110
-/**
- * Travel, in pixels, past which a gesture stops being a tap.
- *
- * A finger never lands and lifts on exactly one pixel, so a tap needs a little
- * tolerance; a swipe needs to not be mistaken for one at any cost.
- */
-const TAP_SLOP_PX = 10
 
 type MorphHubProps = {
   rooms: Room[]
   activeIndex: number
-  onStep: (delta: number) => void
-  onSelect: (id: string) => void
-  /** False once anything has been picked — the hub stops accepting input. */
-  interactive: boolean
   /** Drives the whiteout: what the shape does after it has been chosen. */
   phase: Phase
   direction: Direction
-}
-
-/**
- * Wheel and drag stepping, bound at the window rather than to the shape, so
- * input works anywhere in the viewport instead of only over a silhouette that
- * is a different size every second of the morph.
- *
- * Returns whether the gesture in progress has become a drag. The hub's hit
- * sphere needs this: a browser fires `click` on pointer-up whether the pointer
- * moved a pixel or crossed the screen, so without it every swipe also selects
- * whatever it finished on top of. On a phone, where swiping is the only way to
- * browse at all, that means the site opens a room you were scrolling past.
- */
-function usePointerStep(onStep: (delta: number) => void, enabled: boolean) {
-  const dragged = useRef(false)
-
-  useEffect(() => {
-    if (!enabled) return
-
-    let originX: number | null = null
-    let downX = 0
-    let downY = 0
-
-    const wheel = (event: WheelEvent) => onStep(Math.sign(event.deltaY))
-    const down = (event: PointerEvent) => {
-      originX = event.clientX
-      downX = event.clientX
-      downY = event.clientY
-      dragged.current = false
-    }
-    const move = (event: PointerEvent) => {
-      if (originX === null) return
-
-      // Measured from where the finger landed, not from the last step: the
-      // step origin is reset on every step, so travel from it says nothing
-      // about whether this gesture as a whole was a tap.
-      if (Math.hypot(event.clientX - downX, event.clientY - downY) > TAP_SLOP_PX) {
-        dragged.current = true
-      }
-
-      const travel = event.clientX - originX
-      if (Math.abs(travel) < DRAG_STEP_PX) return
-      onStep(-Math.sign(travel)) // drag right brings the previous project forward
-      originX = event.clientX
-    }
-    // `dragged` deliberately survives pointer-up: the click it has to suppress
-    // is dispatched after it. The next pointer-down clears it.
-    const up = () => {
-      originX = null
-    }
-
-    window.addEventListener('wheel', wheel)
-    window.addEventListener('pointerdown', down)
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', up)
-    return () => {
-      window.removeEventListener('wheel', wheel)
-      window.removeEventListener('pointerdown', down)
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', up)
-    }
-  }, [onStep, enabled])
-
-  return dragged
 }
 
 function mix(from: number, to: number, t: number): number {
@@ -184,15 +103,7 @@ function applyLayer(
  * What gets drawn is two topologies over its position buffer — the shape being
  * left and the shape being flown to — cross-fading across the flight.
  */
-export function MorphHub({
-  rooms,
-  activeIndex,
-  onStep,
-  onSelect,
-  interactive,
-  phase,
-  direction,
-}: MorphHubProps) {
+export function MorphHub({ rooms, activeIndex, phase, direction }: MorphHubProps) {
   const clock = useThree((state) => state.clock)
   const spinner = useRef<Group>(null)
   const labels = useRef<Group>(null)
@@ -253,8 +164,6 @@ export function MorphHub({
     outgoingBound.current = false
     steppedAt.current = clock.getElapsedTime()
   }, [activeIndex, clock])
-
-  const dragged = usePointerStep(onStep, interactive)
 
   // Read once. A pointer type does not change mid-visit, and re-reading it
   // every frame would re-lay out the text.
@@ -414,33 +323,6 @@ export function MorphHub({
           edgeRef={incomingEdge}
         />
       </group>
-
-      {/* Click target. A plain sphere is a steadier and far cheaper raycast hit
-          than a few hundred vertices in mid-flight, and it gives an XR
-          controller ray something forgiving to land on. The material is
-          invisible rather than the mesh: an invisible *object* is skipped by the
-          raycaster entirely, which would make the hub unclickable.
-
-          Outside the group the whiteout scales, so the target keeps the size of
-          the shape at rest instead of swelling to swallow the camera along with
-          it. */}
-      <mesh
-        onClick={(event) => {
-          event.stopPropagation()
-          if (!interactive || dragged.current) return
-          onSelect(room.id)
-        }}
-        onPointerOver={(event) => {
-          event.stopPropagation()
-          if (interactive) document.body.style.cursor = 'pointer'
-        }}
-        onPointerOut={() => {
-          document.body.style.cursor = 'auto'
-        }}
-      >
-        <sphereGeometry args={[HIT_RADIUS * SHAPE_SCALE, 12, 8]} />
-        <meshBasicMaterial visible={false} />
-      </mesh>
 
       {/* Outside the spinning group: a label that turns away is no label. */}
       <group ref={labels}>

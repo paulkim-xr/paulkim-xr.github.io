@@ -1,4 +1,4 @@
-import { idleGesture, onPress, type GestureState } from '../gesture'
+import { DWELL_MS, idleGesture, onPress, type GestureState } from '../gesture'
 import { NO_INTENTS, type Intents } from '../intents'
 import type { Signals, Technique } from '../technique'
 
@@ -23,28 +23,48 @@ export const LOOK_PER_PIXEL = 0.0032
  * ceiling comes into view. The same way round as a panorama, which is why
  * looking up is something a visitor discovers rather than has to be told.
  */
-export const pointerTechnique: Technique<GestureState> = {
-  id: 'pointer',
-  produces: ['advance', 'yaw', 'pitch', 'act'],
-  requires: ['pointer'],
+function makePointerTechnique(id: string, dwell: number): Technique<GestureState> {
+  const walks = Number.isFinite(dwell)
 
-  initial: idleGesture,
+  return {
+    id,
+    produces: walks ? ['advance', 'yaw', 'pitch', 'act'] : ['yaw', 'pitch', 'act'],
+    requires: ['pointer'],
 
-  reduce(state: GestureState, signals: Signals) {
-    let gesture = state
-    // A local accumulator: everything handed in stays untouched.
-    const intents: Intents = { ...NO_INTENTS }
+    initial: idleGesture,
 
-    for (const press of signals.presses) {
-      const outcome = onPress(gesture, press)
-      gesture = outcome.state
+    reduce(state: GestureState, signals: Signals) {
+      let gesture = state
+      // A local accumulator: everything handed in stays untouched.
+      const intents: Intents = { ...NO_INTENTS }
 
-      intents.yaw -= outcome.dragged.dx * LOOK_PER_PIXEL
-      intents.pitch += outcome.dragged.dy * LOOK_PER_PIXEL
-      if (outcome.advancing) intents.advance = 1
-      if (outcome.acted) intents.act = true
-    }
+      for (const press of signals.presses) {
+        const outcome = onPress(gesture, press, dwell)
+        gesture = outcome.state
 
-    return { state: gesture, intents }
-  },
+        intents.yaw -= outcome.dragged.dx * LOOK_PER_PIXEL
+        intents.pitch += outcome.dragged.dy * LOOK_PER_PIXEL
+        if (outcome.advancing) intents.advance = 1
+        if (outcome.acted) intents.act = true
+      }
+
+      return { state: gesture, intents }
+    },
+  }
 }
+
+export const pointerTechnique = makePointerTechnique('pointer', DWELL_MS)
+
+/**
+ * The pointer, in a space with nowhere to walk.
+ *
+ * The hub is a ring of things seen from one spot, not somewhere you go, so a
+ * press there is only ever a look or a tap. Without this a click held longer
+ * than the dwell becomes a walk the hub has no use for, and the tap that
+ * should have opened the project is swallowed on release — a slow click would
+ * simply not work.
+ *
+ * A room replacing the shipped technique with one of its own is what the
+ * technique list is for; this is the smallest example of it.
+ */
+export const stillPointerTechnique = makePointerTechnique('pointer-still', Infinity)

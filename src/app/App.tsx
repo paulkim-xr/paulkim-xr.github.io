@@ -5,6 +5,7 @@ import { getRoom, rooms, roomIndex } from '../content/registry'
 import { browsingIn, initialState } from '../transition/machine'
 import { useTransition } from '../transition/useTransition'
 import { FOCUS_SECONDS } from '../transition/whiteout'
+import { BrowseInput } from './BrowseInput'
 import { Stage } from './Stage'
 
 /**
@@ -25,10 +26,6 @@ export function App() {
   const { state, focusComplete, select, exit } = transition
 
   const [activeIndex, setActiveIndex] = useState(() => Math.max(roomIndex(id ?? ''), 0))
-
-  const step = useCallback((delta: number) => {
-    setActiveIndex((current) => (((current + delta) % rooms.length) + rooms.length) % rooms.length)
-  }, [])
 
   // The focusing beat is time-based; every other phase is driven by an event.
   useEffect(() => {
@@ -73,23 +70,24 @@ export function App() {
     if (state.phase === 'browsing' && id && getRoom(id)) select(id)
   }, [id, currentPath, state.phase, exit, select])
 
-  // Flat keyboard parity with the carousel's wheel and the XR thumbstick.
+  /**
+   * Leaving a room.
+   *
+   * Still bound here rather than read from a room's own `leave` intent: the
+   * rooms are mounted inside the canvas and the transition machine is out
+   * here, and threading one to the other buys nothing this does not already
+   * do. Browsing input lives in `BrowseInput`.
+   */
   useEffect(() => {
+    if (state.phase !== 'inRoom') return
     const onKey = (event: KeyboardEvent) => {
-      // Browsing only. The arrows belonged to the hub in every phase, which
-      // silently reordered it from inside a room — you would come back out to a
-      // different project than the one you went in from — and left nothing for
-      // a room that wants to use them to move the viewer around.
-      if (state.phase === 'browsing') {
-        if (event.key === 'ArrowRight') step(1)
-        if (event.key === 'ArrowLeft') step(-1)
-        if (event.key === 'Enter') select(rooms[activeIndex].id)
-      }
-      if (event.key === 'Escape' && state.phase === 'inRoom') exit()
+      if (event.key === 'Escape') exit()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [step, select, exit, state.phase, activeIndex])
+  }, [exit, state.phase])
+
+  const choose = useCallback((index: number) => select(rooms[index].id), [select])
 
   // Start the download the instant a selection is made, so it overlaps the
   // focus and mask animations rather than beginning after them.
@@ -111,8 +109,14 @@ export function App() {
   return (
     <>
       {state.phase === 'inRoom' && <ExitButton onExit={exit} />}
+      {/* Browsing only, so the arrows cannot reorder the carousel from inside
+          a room — and so a room's worth of drags does not queue up to be spent
+          on the way back out. */}
+      {state.phase === 'browsing' && (
+        <BrowseInput count={rooms.length} onIndex={setActiveIndex} onChoose={choose} />
+      )}
       <Canvas camera={{ position: [0, 0.15, 3.3], fov: 50 }} data-testid="scene">
-        <Stage activeIndex={activeIndex} transition={transition} onStep={step} xrMode={false} />
+        <Stage activeIndex={activeIndex} transition={transition} xrMode={false} />
       </Canvas>
     </>
   )

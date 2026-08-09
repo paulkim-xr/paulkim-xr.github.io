@@ -36,7 +36,6 @@ export default defineConfig({
         // was carrying tests that counted towards nothing.
         'src/rooms/svr/walk.ts',
         'src/rooms/svr/gaze.ts',
-        'src/rooms/controls.ts',
         'src/rooms/papercup/wave.ts',
         'src/rooms/papercup/stroll.ts',
         'src/rooms/papercup/corridor.ts',
@@ -51,7 +50,6 @@ export default defineConfig({
         'src/lab/circles/field.ts',
         'src/lab/gravity/nbody.ts',
         'src/lab/gravity/scatter.ts',
-        'src/xr/useXrSupport.ts',
       ],
       exclude: [
         // A hook, not a module: it subscribes to the window and hands a frame

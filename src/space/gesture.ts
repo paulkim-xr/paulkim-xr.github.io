@@ -63,8 +63,13 @@ function out(state: GestureState, extra: Partial<Omit<GestureOut, 'state'>> = {}
  *
  * Once a press has become a look it stays one, even if the finger then holds
  * still — a slow drag that pauses is still a drag.
+ *
+ * `dwell` is how long a press must be held before it walks. A space with
+ * nowhere to walk passes `Infinity`, so a press there is only ever a look or a
+ * tap — otherwise a slow click would be swallowed by a walk that the space
+ * has no use for and the visitor never asked for.
  */
-export function onPress(state: GestureState, press: Press): GestureOut {
+export function onPress(state: GestureState, press: Press, dwell = DWELL_MS): GestureOut {
   switch (press.kind) {
     case 'down':
       return out({
@@ -110,7 +115,7 @@ export function onPress(state: GestureState, press: Press): GestureOut {
     case 'tick': {
       if (!state.origin) return out(state)
 
-      if (state.role === 'undecided' && press.at - state.origin.at > DWELL_MS) {
+      if (state.role === 'undecided' && press.at - state.origin.at > dwell) {
         return out({ ...state, role: 'advance' }, { advancing: true })
       }
       return out(state, { advancing: state.role === 'advance' })

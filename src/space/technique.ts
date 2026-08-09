@@ -21,6 +21,8 @@ export type Signals = {
   struck: ReadonlySet<string>
   /** Pointer events since the last frame, in order, ending with a tick. */
   presses: readonly Press[]
+  /** Wheel travel since the last frame. A notch is of the order of 100. */
+  wheel: number
   /** Milliseconds, for anything measuring how long a thing has been held. */
   now: number
 }

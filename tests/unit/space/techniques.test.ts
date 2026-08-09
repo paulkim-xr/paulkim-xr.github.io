@@ -9,6 +9,7 @@ const signals = (part: Partial<Signals> = {}): Signals => ({
   keys: new Set<string>(),
   struck: new Set<string>(),
   presses: [],
+  wheel: 0,
   now: 0,
   ...part,
 })
